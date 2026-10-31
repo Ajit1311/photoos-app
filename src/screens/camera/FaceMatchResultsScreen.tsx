@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,94 +20,29 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../theme/colors";
 import { typography } from "../../theme/typography";
 import { useAppSettings } from "../../context/AppSettingsContext";
-import { getActiveEventContextSync, type ActiveEventContext } from "../../services/event-gallery/event-qr-detector";
+import {
+  getActiveEventContextSync,
+  type ActiveEventContext,
+} from "../../services/event-gallery/event-qr-detector";
+import {
+  fetchLiveEventGallery,
+  type LiveEventPhoto,
+  type LiveEventInfo,
+} from "../../services/event-gallery/live-event-photos.service";
+import {
+  extractSelfieFaceDescriptor,
+  extractPhotoFacesDescriptors,
+  compareTargetFace,
+  loadFaceRecognitionModels,
+  MATCH_THRESHOLD,
+} from "../../services/ai/face-recognition";
 
 const { width: windowWidth } = Dimensions.get("window");
 
-interface MatchedPhoto {
-  id: string;
-  url: string;
-  category: "Portraits" | "Ceremony" | "Reception" | "Candid";
-  confidence: number;
-  timeAgo: string;
-  dimensions: string;
+export interface DisplayPhoto extends LiveEventPhoto {
+  confidence?: number;
+  isMatch?: boolean;
 }
-
-// Curated high-resolution event photography showcase for weddings & corporate events
-const SAMPLE_EVENT_PHOTOS: MatchedPhoto[] = [
-  {
-    id: "p1",
-    url: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80",
-    category: "Portraits",
-    confidence: 99.6,
-    timeAgo: "2 hours ago",
-    dimensions: "4000 x 6000",
-  },
-  {
-    id: "p2",
-    url: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80",
-    category: "Ceremony",
-    confidence: 99.4,
-    timeAgo: "3 hours ago",
-    dimensions: "3840 x 5760",
-  },
-  {
-    id: "p3",
-    url: "https://images.unsplash.com/photo-1532712938310-34cb3982ef74?auto=format&fit=crop&w=1200&q=80",
-    category: "Portraits",
-    confidence: 99.1,
-    timeAgo: "3 hours ago",
-    dimensions: "4000 x 6000",
-  },
-  {
-    id: "p4",
-    url: "https://images.unsplash.com/photo-1544077960-604201fe74bc?auto=format&fit=crop&w=1200&q=80",
-    category: "Reception",
-    confidence: 98.9,
-    timeAgo: "4 hours ago",
-    dimensions: "3600 x 5400",
-  },
-  {
-    id: "p5",
-    url: "https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1200&q=80",
-    category: "Ceremony",
-    confidence: 99.2,
-    timeAgo: "4 hours ago",
-    dimensions: "4000 x 6000",
-  },
-  {
-    id: "p6",
-    url: "https://images.unsplash.com/photo-1519225438184-88185c4387e8?auto=format&fit=crop&w=1200&q=80",
-    category: "Candid",
-    confidence: 98.7,
-    timeAgo: "5 hours ago",
-    dimensions: "3800 x 5700",
-  },
-  {
-    id: "p7",
-    url: "https://images.unsplash.com/photo-1522673607200-164d1b6ce486?auto=format&fit=crop&w=1200&q=80",
-    category: "Reception",
-    confidence: 99.0,
-    timeAgo: "5 hours ago",
-    dimensions: "4200 x 6300",
-  },
-  {
-    id: "p8",
-    url: "https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?auto=format&fit=crop&w=1200&q=80",
-    category: "Candid",
-    confidence: 98.5,
-    timeAgo: "6 hours ago",
-    dimensions: "3900 x 5850",
-  },
-  {
-    id: "p9",
-    url: "https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1200&q=80",
-    category: "Portraits",
-    confidence: 99.5,
-    timeAgo: "6 hours ago",
-    dimensions: "4000 x 6000",
-  },
-];
 
 export default function FaceMatchResultsScreen() {
   const navigation = useNavigation<any>();
@@ -117,275 +52,494 @@ export default function FaceMatchResultsScreen() {
 
   const selfieUri = route.params?.selfieUri as string | undefined;
 
-  const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(null);
-  const [matchingState, setMatchingState] = useState<"scanning" | "matched">("scanning");
-  const [activeCategory, setActiveCategory] = useState<string>("All");
-  const [selectedPhoto, setSelectedPhoto] = useState<MatchedPhoto | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(() =>
+    getActiveEventContextSync()
+  );
+  const [eventInfo, setEventInfo] = useState<LiveEventInfo | null>(null);
+  const [allPhotos, setAllPhotos] = useState<DisplayPhoto[]>([]);
+  const [matchedPhotos, setMatchedPhotos] = useState<DisplayPhoto[]>([]);
+
+  const [viewTab, setViewTab] = useState<"matched" | "all">("matched");
+  const [matchingState, setMatchingState] = useState<
+    "loading_gallery" | "loading_ai" | "scanning_selfie" | "matching" | "done" | "no_face_in_selfie"
+  >("loading_gallery");
+  const [statusMessage, setStatusMessage] = useState<string>("Loading event photos...");
+  const [selectedPhoto, setSelectedPhoto] = useState<DisplayPhoto | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Localization strings
+  const t = useMemo(() => {
+    if (language === "मराठी") {
+      return {
+        matchedTab: "माझे मॅच झालेले फोटो",
+        allTab: "सर्व इव्हेंट फोटो",
+        scanningTitle: "AI फेस रेकग्निशन चालू आहे",
+        scanningSelfie: "तुमच्या सेल्फीमधील चेहरा स्कॅन करत आहे...",
+        matchingPhotos: "इव्हेंटच्या फोटोंमधून तुमचे फोटो शोधत आहे...",
+        foundMatches: "फोटो मॅच झाले (99% अचूकता)",
+        noMatches: "तुमच्या चेहऱ्याचे कोणतेही फोटो सापडले नाहीत",
+        noFaceTitle: "चेहरा स्पष्ट दिसला नाही",
+        noFaceDesc: "कृपया चांगल्या प्रकाशात समोर बघून नवीन सेल्फी घ्या.",
+        retakeSelfie: "नवीन सेल्फी घ्या",
+        browseAll: "सर्व फोटो बघा",
+        downloadHd: "HD डाउनलोड",
+        shareWhatsapp: "व्हॉट्सॲपवर शेअर करा",
+        emptyGallery: "या इव्हेंटमध्ये अजून फोटो अपलोड केलेले नाहीत.",
+        emptySub: "फोटोग्राफर किंवा आयोजकांनी फोटो अपलोड केल्यावर ते येथे दिसतील.",
+        takeSelfieCta: "तुमचे फोटो शोधण्यासाठी सेल्फी घ्या",
+      };
+    }
+    if (language === "हिन्दी") {
+      return {
+        matchedTab: "मेरे मैच हुए फोटो",
+        allTab: "सभी इवेंट फोटो",
+        scanningTitle: "AI फेस रिकग्निशन जारी है",
+        scanningSelfie: "आपकी सेल्फी में चेहरा स्कैन हो रहा है...",
+        matchingPhotos: "इवेंट फोटो से आपकी तस्वीरें खोजी जा रही हैं...",
+        foundMatches: "फोटो मैच हुए (99% सटीकता)",
+        noMatches: "आपके चेहरे का कोई फोटो नहीं मिला",
+        noFaceTitle: "चेहरा स्पष्ट नहीं दिखा",
+        noFaceDesc: "कृपया अच्छी रोशनी में सामने देखकर नई सेल्फी लें।",
+        retakeSelfie: "नई सेल्फी लें",
+        browseAll: "सभी फोटो देखें",
+        downloadHd: "HD डाउनलोड",
+        shareWhatsapp: "व्हाट्सएप पर शेयर करें",
+        emptyGallery: "इस इवेंट में अभी कोई फोटो अपलोड नहीं हुआ है।",
+        emptySub: "फोटोग्राफर द्वारा फोटो अपलोड होते ही वे यहां दिखेंगे।",
+        takeSelfieCta: "अपने फोटो खोजने के लिए सेल्फी लें",
+      };
+    }
+    return {
+      matchedTab: "My Matched Photos",
+      allTab: "All Event Photos",
+      scanningTitle: "AI Face Recognition in Progress",
+      scanningSelfie: "Detecting biometric features from your selfie...",
+      matchingPhotos: "Matching your face against event photos...",
+      foundMatches: "Photos matched with 99%+ accuracy",
+      noMatches: "No matching photos found for your face yet",
+      noFaceTitle: "No Clear Face Detected",
+      noFaceDesc: "Please take a well-lit front-facing selfie and try again.",
+      retakeSelfie: "Retake Selfie",
+      browseAll: "Browse All Photos",
+      downloadHd: "Download HD",
+      shareWhatsapp: "Share on WhatsApp",
+      emptyGallery: "No photos have been uploaded to this event yet.",
+      emptySub: "Once the organizer or studio uploads photos, they will appear here.",
+      takeSelfieCta: "Take a Selfie to Match My Photos",
+    };
+  }, [language]);
+
+  // Load live event gallery photos from backend
+  const loadGalleryAndMatch = useCallback(async () => {
+    const currentEvent = activeEvent || getActiveEventContextSync();
+    const eventId = currentEvent?.eventId || "ev_corp_default";
+
+    try {
+      setMatchingState("loading_gallery");
+      setStatusMessage("Connecting to PhotoOS live gallery...");
+
+      const galleryResult = await fetchLiveEventGallery(eventId, currentEvent?.type);
+      setEventInfo(galleryResult.event);
+      setAllPhotos(galleryResult.photos);
+
+      const photos = galleryResult.photos;
+
+      if (!selfieUri) {
+        // No selfie provided -> Just show all photos
+        setViewTab("all");
+        setMatchingState("done");
+        return;
+      }
+
+      if (photos.length === 0) {
+        setViewTab("all");
+        setMatchingState("done");
+        return;
+      }
+
+      // Step 2: Initialize AI models
+      setMatchingState("loading_ai");
+      setStatusMessage("Loading ResNet-34 AI Face Recognition engine...");
+      await loadFaceRecognitionModels();
+
+      // Step 3: Extract face descriptor from selfie
+      setMatchingState("scanning_selfie");
+      setStatusMessage(t.scanningSelfie);
+      const selfieResult = await extractSelfieFaceDescriptor(selfieUri);
+
+      if (!selfieResult.success || !selfieResult.descriptor) {
+        setMatchingState("no_face_in_selfie");
+        return;
+      }
+
+      const selfieDescriptor = selfieResult.descriptor;
+
+      // Step 4: Scan and match each photo in the event
+      setMatchingState("matching");
+      const matchedList: DisplayPhoto[] = [];
+      const CHUNK_SIZE = 3;
+
+      for (let i = 0; i < photos.length; i += CHUNK_SIZE) {
+        const chunk = photos.slice(i, i + CHUNK_SIZE);
+        const progressCount = Math.min(i + chunk.length, photos.length);
+        setStatusMessage(`${t.matchingPhotos} (${progressCount}/${photos.length})`);
+
+        await Promise.all(
+          chunk.map(async (photo) => {
+            const photoUrl = photo.thumbnailUrl || photo.url;
+            if (!photoUrl) return;
+
+            try {
+              const photoFaces = await extractPhotoFacesDescriptors(photoUrl);
+              if (photoFaces.length > 0) {
+                const match = compareTargetFace(
+                  selfieDescriptor,
+                  photoFaces.map((f) => f.descriptor),
+                  MATCH_THRESHOLD
+                );
+
+                if (match.isMatch) {
+                  matchedList.push({
+                    ...photo,
+                    confidence: match.similarity,
+                    isMatch: true,
+                  });
+                }
+              }
+            } catch (scanErr) {
+              console.warn("[FaceMatch] Could not analyze photo:", photo.id, scanErr);
+            }
+          })
+        );
+      }
+
+      // Sort matched photos by highest confidence
+      matchedList.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+
+      setMatchedPhotos(matchedList);
+      setViewTab(matchedList.length > 0 ? "matched" : "all");
+      setMatchingState("done");
+    } catch (err: any) {
+      console.error("[FaceMatchResults] Flow error:", err);
+      setViewTab("all");
+      setMatchingState("done");
+    }
+  }, [activeEvent, selfieUri, t]);
 
   useEffect(() => {
-    const event = getActiveEventContextSync();
-    if (event) {
-      setActiveEvent(event);
-    }
+    void loadGalleryAndMatch();
+  }, [loadGalleryAndMatch]);
 
-    // Simulate precise AI ResNet-34 face feature extraction & vector distance search
-    const timer = setTimeout(() => {
-      setMatchingState("matched");
-    }, 1400);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadGalleryAndMatch();
+    setRefreshing(false);
+  };
 
-    return () => clearTimeout(timer);
-  }, []);
+  const displayedPhotos = viewTab === "matched" ? matchedPhotos : allPhotos;
 
-  const categories = useMemo(() => {
-    return ["All", "Portraits", "Ceremony", "Reception", "Candid"];
-  }, []);
-
-  const filteredPhotos = useMemo(() => {
-    if (activeCategory === "All") return SAMPLE_EVENT_PHOTOS;
-    return SAMPLE_EVENT_PHOTOS.filter((p) => p.category === activeCategory);
-  }, [activeCategory]);
-
-  const handleDownloadSingle = (photo: MatchedPhoto) => {
-    if (Platform.OS === "web") {
+  const handleDownloadSingle = (photo: DisplayPhoto) => {
+    const downloadUrl = photo.url || photo.thumbnailUrl;
+    if (Platform.OS === "web" && typeof window !== "undefined") {
       const a = document.createElement("a");
-      a.href = photo.url;
-      a.download = `PhotoOS-${photo.id}.jpg`;
+      a.href = downloadUrl;
+      a.download = `PhotoOS-${photo.name || photo.id}.jpg`;
       a.target = "_blank";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     } else {
-      Alert.alert("Photo Saved", "High-resolution photo saved to your gallery.");
+      Alert.alert("Download", "Downloading photo in original high quality...");
     }
   };
 
-  const handleDownloadAll = () => {
-    setDownloading(true);
-    setTimeout(() => {
-      setDownloading(false);
-      Alert.alert(
-        "Photos Ready",
-        `All ${SAMPLE_EVENT_PHOTOS.length} matched photos have been prepared in original print quality.`
-      );
-    }, 1200);
+  const handleWhatsAppShare = (photo: DisplayPhoto) => {
+    const evName = eventInfo?.name || activeEvent?.eventName || "Event";
+    const shareText = `Check out my photo from ${evName} on PhotoOS: ${photo.url || photo.thumbnailUrl}`;
+    const url = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.open(url, "_blank");
+    } else {
+      Alert.alert("Share", "Sharing via WhatsApp...");
+    }
   };
-
-  const titleText =
-    language === "मराठी"
-      ? "तुमचे मॅच झालेले फोटो"
-      : language === "हिन्दी"
-        ? "आपकी मैच हुई तस्वीरें"
-        : "Your Matched Photos";
-
-  const subtitleText =
-    language === "मराठी"
-      ? `AI द्वारे ${SAMPLE_EVENT_PHOTOS.length} फोटो सापडले आहेत`
-      : language === "हिन्दी"
-        ? `AI द्वारा ${SAMPLE_EVENT_PHOTOS.length} तस्वीरें मिलीं`
-        : `${SAMPLE_EVENT_PHOTOS.length} photos matched via AI Face Recognition`;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* ------------------------------------------------------------ */}
-      {/* TOP HEADER */}
-      {/* ------------------------------------------------------------ */}
+      {/* HEADER */}
       <View
         style={[
           styles.header,
           {
-            backgroundColor: theme.background,
-            paddingTop: insets.top + 8,
+            paddingTop: insets.top + 10,
+            borderBottomColor: theme.border,
+            backgroundColor: theme.surface,
           },
         ]}
       >
         <TouchableOpacity
-          activeOpacity={0.7}
-          style={[styles.headerButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          style={[styles.iconButton, { borderColor: theme.border }]}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="chevron-back" size={20} color={theme.text} />
+          <Ionicons name="arrow-back" size={20} color={theme.text} />
         </TouchableOpacity>
 
-        <View style={styles.headerTitleWrap}>
+        <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
-            {activeEvent?.eventName ?? "Event Gallery"}
+            {eventInfo?.name || activeEvent?.eventName || "Live Event Gallery"}
           </Text>
-          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
-            {activeEvent?.studioName ?? "Studio Pro"} • 99.4% Biometric Match
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+            {eventInfo?.studioName || activeEvent?.studioName || "Photo Studio"}
           </Text>
         </View>
 
         <TouchableOpacity
-          activeOpacity={0.7}
-          style={[styles.headerButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+          style={[styles.iconButton, { borderColor: theme.border }]}
+          onPress={handleRefresh}
+          disabled={refreshing}
         >
-          <Ionicons name="camera-outline" size={20} color={theme.text} />
+          <Ionicons
+            name={refreshing ? "sync" : "refresh"}
+            size={19}
+            color={theme.primary}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* ------------------------------------------------------------ */}
       {/* SCANNING STATE OVERLAY */}
-      {/* ------------------------------------------------------------ */}
-      {matchingState === "scanning" ? (
+      {matchingState !== "done" && matchingState !== "no_face_in_selfie" && (
         <View style={styles.scanningContainer}>
-          {selfieUri ? (
-            <View style={styles.scanningAvatarWrap}>
-              <Image source={{ uri: selfieUri }} style={styles.scanningAvatar} />
-              <View style={styles.scanningScanBeam} />
+          <View style={[styles.scanningCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.scanningPulseRing}>
+              {selfieUri ? (
+                <Image source={{ uri: selfieUri }} style={styles.scanningSelfie} />
+              ) : (
+                <View style={[styles.scanningIconWrap, { backgroundColor: `${theme.primary}20` }]}>
+                  <Ionicons name="scan-outline" size={48} color={theme.primary} />
+                </View>
+              )}
+              <ActivityIndicator
+                size="large"
+                color={theme.primary}
+                style={styles.scanningSpinner}
+              />
             </View>
-          ) : (
-            <View style={[styles.scanningIconWrap, { backgroundColor: `${colors.primary}15` }]}>
-              <Ionicons name="scan" size={48} color={colors.primary} />
-            </View>
-          )}
 
-          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 24 }} />
-          <Text style={[styles.scanningTitle, { color: theme.text }]}>Scanning Biometric Features...</Text>
-          <Text style={[styles.scanningSub, { color: theme.textSecondary }]}>
-            Running ResNet-34 face detection across event album photographs
-          </Text>
+            <Text style={[styles.scanningTitle, { color: theme.text }]}>
+              {t.scanningTitle}
+            </Text>
+
+            <Text style={[styles.scanningSub, { color: theme.textSecondary }]}>
+              {statusMessage}
+            </Text>
+          </View>
         </View>
-      ) : (
+      )}
+
+      {/* NO FACE IN SELFIE WARNING */}
+      {matchingState === "no_face_in_selfie" && (
+        <View style={styles.scanningContainer}>
+          <View style={[styles.scanningCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.scanningIconWrap, { backgroundColor: "#FF3B3020" }]}>
+              <Ionicons name="alert-circle-outline" size={54} color="#FF3B30" />
+            </View>
+
+            <Text style={[styles.scanningTitle, { color: theme.text }]}>
+              {t.noFaceTitle}
+            </Text>
+
+            <Text style={[styles.scanningSub, { color: theme.textSecondary }]}>
+              {t.noFaceDesc}
+            </Text>
+
+            <View style={styles.errorActionRow}>
+              <TouchableOpacity
+                style={[styles.retakeButton, { backgroundColor: theme.primary }]}
+                onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+              >
+                <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.retakeText}>{t.retakeSelfie}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.browseButton, { borderColor: theme.border }]}
+                onPress={() => {
+                  setViewTab("all");
+                  setMatchingState("done");
+                }}
+              >
+                <Text style={[styles.browseText, { color: theme.text }]}>{t.browseAll}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* MATCHED RESULTS VIEW */}
+      {matchingState === "done" && (
         <ScrollView
-          showsVerticalScrollIndicator={false}
+          style={styles.scrollArea}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: insets.bottom + 100 },
+            { paddingBottom: insets.bottom + 30 },
           ]}
+          showsVerticalScrollIndicator={false}
         >
-          {/* ------------------------------------------------------------ */}
-          {/* AI SUMMARY HERO BANNER */}
-          {/* ------------------------------------------------------------ */}
-          <View
-            style={[
-              styles.summaryBanner,
-              {
-                backgroundColor: theme.surface,
-                borderColor: theme.border,
-              },
-            ]}
-          >
-            <View style={styles.summaryLeft}>
-              {selfieUri ? (
-                <View style={styles.selfieBadgeWrap}>
-                  <Image source={{ uri: selfieUri }} style={styles.selfieSmall} />
-                  <View style={styles.selfieVerifiedTick}>
-                    <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-                  </View>
-                </View>
-              ) : (
-                <View style={[styles.aiIconBadge, { backgroundColor: `${colors.primary}18` }]}>
-                  <Ionicons name="sparkles" size={22} color={colors.primary} />
-                </View>
-              )}
-
-              <View style={styles.summaryTextGroup}>
-                <View style={styles.badgeRow}>
-                  <View style={styles.activePill}>
-                    <Text style={styles.activePillText}>99.4% ACCURACY</Text>
-                  </View>
-                  <Text style={[styles.eventLabel, { color: theme.textSecondary }]}>
-                    {activeEvent?.eventName ? `Event: ${activeEvent.eventName}` : "Face Search Complete"}
-                  </Text>
-                </View>
-
-                <Text style={[styles.summaryHeading, { color: theme.text }]}>
-                  {titleText}
-                </Text>
-                <Text style={[styles.summaryDescription, { color: theme.textSecondary }]}>
-                  {subtitleText}
-                </Text>
-              </View>
-            </View>
+          {/* TAB BAR: MATCHED PHOTOS vs ALL EVENT PHOTOS */}
+          <View style={[styles.tabBarWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                viewTab === "matched" && [styles.tabButtonActive, { backgroundColor: theme.primary }],
+              ]}
+              onPress={() => setViewTab("matched")}
+            >
+              <Ionicons
+                name="sparkles"
+                size={15}
+                color={viewTab === "matched" ? "#FFFFFF" : theme.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.tabButtonText,
+                  { color: viewTab === "matched" ? "#FFFFFF" : theme.textSecondary },
+                ]}
+              >
+                {t.matchedTab} ({matchedPhotos.length})
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
-              activeOpacity={0.85}
-              style={[styles.downloadAllBtn, { backgroundColor: colors.primary }]}
-              onPress={handleDownloadAll}
-              disabled={downloading}
+              style={[
+                styles.tabButton,
+                viewTab === "all" && [styles.tabButtonActive, { backgroundColor: theme.primary }],
+              ]}
+              onPress={() => setViewTab("all")}
             >
-              {downloading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="cloud-download-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.downloadAllText}>Download All</Text>
-                </>
-              )}
+              <Ionicons
+                name="images-outline"
+                size={15}
+                color={viewTab === "all" ? "#FFFFFF" : theme.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.tabButtonText,
+                  { color: viewTab === "all" ? "#FFFFFF" : theme.textSecondary },
+                ]}
+              >
+                {t.allTab} ({allPhotos.length})
+              </Text>
             </TouchableOpacity>
           </View>
 
-          {/* ------------------------------------------------------------ */}
-          {/* CATEGORY FILTER CHIPS */}
-          {/* ------------------------------------------------------------ */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterBar}
-          >
-            {categories.map((cat) => {
-              const active = cat === activeCategory;
-              return (
-                <TouchableOpacity
-                  key={cat}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.chip,
-                    active
-                      ? { backgroundColor: theme.primary, borderColor: theme.primary }
-                      : { backgroundColor: theme.surface, borderColor: theme.border },
-                  ]}
-                  onPress={() => setActiveCategory(cat)}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      active ? { color: "#FFFFFF", fontWeight: "700" } : { color: theme.textSecondary },
-                    ]}
-                  >
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          {/* SUMMARY BANNER */}
+          {viewTab === "matched" && (
+            <View
+              style={[
+                styles.summaryBanner,
+                {
+                  backgroundColor: matchedPhotos.length > 0 ? `${theme.primary}12` : theme.surface,
+                  borderColor: matchedPhotos.length > 0 ? `${theme.primary}40` : theme.border,
+                },
+              ]}
+            >
+              <View style={styles.summaryLeft}>
+                {selfieUri ? (
+                  <View style={styles.selfieBadgeWrap}>
+                    <Image source={{ uri: selfieUri }} style={styles.selfieSmall} />
+                    <View style={styles.selfieVerifiedTick}>
+                      <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[styles.aiIconBadge, { backgroundColor: `${theme.primary}25` }]}>
+                    <Ionicons name="scan-outline" size={24} color={theme.primary} />
+                  </View>
+                )}
 
-          {/* ------------------------------------------------------------ */}
-          {/* MATCHED PHOTOS GRID */}
-          {/* ------------------------------------------------------------ */}
+                <View style={styles.summaryTextGroup}>
+                  <Text style={[styles.summaryHeading, { color: theme.text }]}>
+                    {matchedPhotos.length > 0
+                      ? `${matchedPhotos.length} ${t.foundMatches}`
+                      : t.noMatches}
+                  </Text>
+                  <Text style={[styles.summaryDescription, { color: theme.textSecondary }]}>
+                    {matchedPhotos.length > 0
+                      ? "Biometric face verification matched with ResNet-34 neural model."
+                      : "You can browse all event photos below or retake your selfie."}
+                  </Text>
+                </View>
+              </View>
+
+              {matchedPhotos.length === 0 && (
+                <TouchableOpacity
+                  style={[styles.takeSelfieButton, { backgroundColor: theme.primary }]}
+                  onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+                >
+                  <Ionicons name="camera-outline" size={17} color="#FFFFFF" />
+                  <Text style={styles.takeSelfieText}>{t.retakeSelfie}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* EMPTY GALLERY STATE */}
+          {displayedPhotos.length === 0 && (
+            <View style={[styles.emptyContainer, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+              <Ionicons name="images-outline" size={54} color={theme.textMuted} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                {t.emptyGallery}
+              </Text>
+              <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
+                {t.emptySub}
+              </Text>
+
+              <TouchableOpacity
+                style={[styles.takeSelfieButton, { backgroundColor: theme.primary, marginTop: 16 }]}
+                onPress={handleRefresh}
+              >
+                <Ionicons name="refresh" size={16} color="#FFFFFF" />
+                <Text style={styles.takeSelfieText}>Refresh Gallery</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* PHOTO GRID */}
           <View style={styles.photoGrid}>
-            {filteredPhotos.map((photo) => (
+            {displayedPhotos.map((photo) => (
               <TouchableOpacity
                 key={photo.id}
-                activeOpacity={0.88}
-                style={[
-                  styles.photoCard,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: theme.border,
-                  },
-                ]}
+                style={[styles.photoCard, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                activeOpacity={0.9}
                 onPress={() => setSelectedPhoto(photo)}
               >
-                <Image source={{ uri: photo.url }} style={styles.photoImage} />
+                <Image
+                  source={{ uri: photo.thumbnailUrl || photo.url }}
+                  style={styles.photoImage}
+                  resizeMode="cover"
+                />
 
-                <View style={styles.photoConfidenceBadge}>
-                  <Ionicons name="sparkles" size={10} color="#FFFFFF" />
-                  <Text style={styles.photoConfidenceText}>{photo.confidence}%</Text>
-                </View>
+                {/* CONFIDENCE PILL (99%+ accuracy) */}
+                {photo.confidence ? (
+                  <View style={styles.photoConfidenceBadge}>
+                    <Ionicons name="shield-checkmark" size={10} color="#34C759" />
+                    <Text style={styles.photoConfidenceText}>
+                      {photo.confidence}% Match
+                    </Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.photoFooter}>
                   <Text style={[styles.photoCategory, { color: theme.text }]} numberOfLines={1}>
-                    {photo.category}
+                    {photo.name || "Event Photo"}
                   </Text>
+
                   <TouchableOpacity
-                    activeOpacity={0.7}
                     style={styles.photoQuickDownload}
                     onPress={() => handleDownloadSingle(photo)}
                   >
-                    <Ionicons name="arrow-down-circle" size={20} color={colors.primary} />
+                    <Ionicons name="download-outline" size={18} color={theme.primary} />
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -394,73 +548,68 @@ export default function FaceMatchResultsScreen() {
         </ScrollView>
       )}
 
-      {/* ------------------------------------------------------------ */}
-      {/* FULL SCREEN PHOTO MODAL */}
-      {/* ------------------------------------------------------------ */}
-      <Modal
-        visible={!!selectedPhoto}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedPhoto(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalTopBar, { paddingTop: insets.top + 10 }]}>
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => setSelectedPhoto(null)}
-            >
-              <Ionicons name="close" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
+      {/* FULLSCREEN PHOTO PREVIEW MODAL */}
+      {selectedPhoto && (
+        <Modal
+          visible={Boolean(selectedPhoto)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSelectedPhoto(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            {/* TOP BAR */}
+            <View style={[styles.modalTopBar, { paddingTop: insets.top + 12 }]}>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setSelectedPhoto(null)}
+              >
+                <Ionicons name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
 
-            <View style={styles.modalTitleBlock}>
-              <Text style={styles.modalPhotoTitle}>{selectedPhoto?.category}</Text>
-              <Text style={styles.modalPhotoSub}>
-                {selectedPhoto?.confidence}% Biometric Match • {selectedPhoto?.dimensions}
-              </Text>
+              <View style={styles.modalTitleBlock}>
+                <Text style={styles.modalPhotoTitle} numberOfLines={1}>
+                  {selectedPhoto.name || "Event Photo"}
+                </Text>
+                {selectedPhoto.confidence ? (
+                  <Text style={styles.modalPhotoSub}>
+                    {selectedPhoto.confidence}% Biometric Match (ResNet-34)
+                  </Text>
+                ) : null}
+              </View>
+
+              <View style={{ width: 40 }} />
             </View>
 
-            <View style={{ width: 40 }} />
-          </View>
-
-          {selectedPhoto ? (
+            {/* HIGH-RES IMAGE */}
             <View style={styles.modalImageWrap}>
               <Image
-                source={{ uri: selectedPhoto.url }}
+                source={{ uri: selectedPhoto.url || selectedPhoto.thumbnailUrl }}
                 style={styles.modalImage}
                 resizeMode="contain"
               />
             </View>
-          ) : null}
 
-          <View style={[styles.modalBottomBar, { paddingBottom: insets.bottom + 20 }]}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.modalActionBtnSecondary}
-              onPress={() => {
-                if (selectedPhoto) {
-                  Alert.alert("Share", "Sharing photo link to WhatsApp...");
-                }
-              }}
-            >
-              <Ionicons name="share-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.modalBtnTextSec}>Share</Text>
-            </TouchableOpacity>
+            {/* ACTION BUTTONS */}
+            <View style={[styles.modalBottomBar, { paddingBottom: insets.bottom + 18 }]}>
+              <TouchableOpacity
+                style={styles.modalActionBtnSecondary}
+                onPress={() => handleWhatsAppShare(selectedPhoto)}
+              >
+                <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+                <Text style={styles.modalBtnTextSec}>Share</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.modalActionBtnPrimary}
-              onPress={() => {
-                if (selectedPhoto) {
-                  handleDownloadSingle(selectedPhoto);
-                }
-              }}
-            >
-              <Ionicons name="download-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.modalBtnTextPrim}>Save to Device</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalActionBtnPrimary, { backgroundColor: theme.primary }]}
+                onPress={() => handleDownloadSingle(selectedPhoto)}
+              >
+                <Ionicons name="download-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.modalBtnTextPrim}>{t.downloadHd}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -470,13 +619,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    borderBottomWidth: 1,
   },
-  headerButton: {
+  iconButton: {
     width: 38,
     height: 38,
     borderRadius: 12,
@@ -484,91 +634,72 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitleWrap: {
+  headerCenter: {
     flex: 1,
-    alignItems: "center",
     marginHorizontal: 12,
+    alignItems: "center",
   },
   headerTitle: {
-    ...typography.title3,
     fontSize: 16,
     fontWeight: "700",
   },
   headerSubtitle: {
-    ...typography.caption,
     fontSize: 11,
     marginTop: 2,
   },
-  scanningContainer: {
+  scrollArea: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 36,
-  },
-  scanningAvatarWrap: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    overflow: "hidden",
-    position: "relative",
-    borderWidth: 3,
-    borderColor: colors.primary,
-  },
-  scanningAvatar: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-  scanningScanBeam: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: "50%",
-    height: 3,
-    backgroundColor: "#38BDF8",
-  },
-  scanningIconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scanningTitle: {
-    ...typography.title2,
-    marginTop: 20,
-    textAlign: "center",
-  },
-  scanningSub: {
-    ...typography.callout,
-    marginTop: 8,
-    textAlign: "center",
-    lineHeight: 20,
   },
   scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  tabBarWrap: {
+    flexDirection: "row",
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 12,
+  },
+  tabButtonActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabButtonText: {
+    fontSize: 12.5,
+    fontWeight: "700",
   },
   summaryBanner: {
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     padding: 16,
     marginBottom: 16,
-    gap: 14,
+    gap: 12,
   },
   summaryLeft: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
   },
   selfieBadgeWrap: {
     position: "relative",
   },
   selfieSmall: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    resizeMode: "cover",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 2,
     borderColor: colors.primary,
   },
@@ -576,8 +707,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: -2,
     right: -2,
-    width: 18,
-    height: 18,
+    width: 17,
+    height: 17,
     borderRadius: 9,
     backgroundColor: "#34C759",
     alignItems: "center",
@@ -593,66 +724,49 @@ const styles = StyleSheet.create({
   summaryTextGroup: {
     flex: 1,
   },
-  badgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 4,
-  },
-  activePill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: `${colors.primary}20`,
-  },
-  activePillText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: colors.primary,
-    letterSpacing: 0.4,
-  },
-  eventLabel: {
-    fontSize: 11,
-    fontWeight: "500",
-  },
   summaryHeading: {
-    ...typography.title3,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "800",
   },
   summaryDescription: {
-    ...typography.caption,
-    fontSize: 12,
+    fontSize: 11.5,
     marginTop: 2,
+    lineHeight: 16,
   },
-  downloadAllBtn: {
-    height: 44,
-    borderRadius: 14,
+  takeSelfieButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
+    height: 42,
+    borderRadius: 12,
     paddingHorizontal: 16,
   },
-  downloadAllText: {
+  takeSelfieText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
   },
-  filterBar: {
-    flexDirection: "row",
-    gap: 8,
-    paddingBottom: 14,
-  },
-  chip: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 18,
+  emptyContainer: {
+    borderRadius: 22,
     borderWidth: 1,
+    padding: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+    textAlign: "center",
   },
-  chipText: {
-    fontSize: 13,
-    fontWeight: "600",
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 12,
+    textAlign: "center",
+  },
+  emptySub: {
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: "center",
+    lineHeight: 18,
   },
   photoGrid: {
     flexDirection: "row",
@@ -660,24 +774,23 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   photoCard: {
-    width: (windowWidth - 36 - 12) / 2,
-    borderRadius: 18,
+    width: (windowWidth - 32 - 12) / 2,
+    borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
   },
   photoImage: {
     width: "100%",
-    height: 190,
-    resizeMode: "cover",
+    height: 180,
   },
   photoConfidenceBadge: {
     position: "absolute",
-    top: 10,
-    right: 10,
-    paddingHorizontal: 8,
+    top: 8,
+    right: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 10,
-    backgroundColor: "rgba(0,0,0,0.65)",
+    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.72)",
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -691,16 +804,104 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   photoCategory: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     flex: 1,
   },
   photoQuickDownload: {
     padding: 2,
+  },
+  scanningContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  scanningCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  scanningPulseRing: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    position: "relative",
+  },
+  scanningSelfie: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+  },
+  scanningIconWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanningSpinner: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+  },
+  scanningTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  scanningSub: {
+    fontSize: 12.5,
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  errorActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 20,
+    width: "100%",
+  },
+  retakeButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  retakeText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  browseButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  browseText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   modalBackdrop: {
     flex: 1,
@@ -711,28 +912,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
   },
   modalCloseBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
   modalTitleBlock: {
     alignItems: "center",
+    flex: 1,
   },
   modalPhotoTitle: {
     color: "#FFFFFF",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
   },
   modalPhotoSub: {
-    color: "rgba(255,255,255,0.7)",
+    color: "#34C759",
     fontSize: 11,
     marginTop: 2,
+    fontWeight: "600",
   },
   modalImageWrap: {
     flex: 1,
@@ -752,7 +955,7 @@ const styles = StyleSheet.create({
   },
   modalActionBtnSecondary: {
     flex: 1,
-    height: 52,
+    height: 50,
     borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.18)",
     flexDirection: "row",
@@ -762,14 +965,13 @@ const styles = StyleSheet.create({
   },
   modalBtnTextSec: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
   },
   modalActionBtnPrimary: {
-    flex: 1.5,
-    height: 52,
+    flex: 1.6,
+    height: 50,
     borderRadius: 16,
-    backgroundColor: colors.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -777,7 +979,7 @@ const styles = StyleSheet.create({
   },
   modalBtnTextPrim: {
     color: "#FFFFFF",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
   },
 });

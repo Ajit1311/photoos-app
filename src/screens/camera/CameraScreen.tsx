@@ -22,6 +22,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/navigation-types";
 import { typography } from "../../theme/typography";
 import { useAppSettings } from "../../context/AppSettingsContext";
+import { getActiveEventContextSync } from "../../services/event-gallery/event-qr-detector";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -29,6 +30,7 @@ export default function CameraScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { theme, language } = useAppSettings();
 
+  const [activeEvent] = useState(() => getActiveEventContextSync());
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraType, setCameraType] = useState<CameraType>("front");
@@ -199,6 +201,15 @@ export default function CameraScreen() {
 
       <View style={styles.content}>
         <View style={styles.titleBlock}>
+          {activeEvent && (
+            <View style={[styles.eventBadge, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}35` }]}>
+              <View style={[styles.eventDot, { backgroundColor: theme.primary }]} />
+              <Text style={[styles.eventBadgeText, { color: theme.primary }]} numberOfLines={1}>
+                {activeEvent.eventName} • {activeEvent.studioName || "Photo Studio"}
+              </Text>
+            </View>
+          )}
+
           <Text style={[styles.title, { color: theme.text }]}>
             Find Your Photos
           </Text>
@@ -347,6 +358,31 @@ export default function CameraScreen() {
             size={21}
             color={theme.textSecondary}
           />
+        </TouchableOpacity>
+
+        {/* BROWSE ALL PHOTOS (SKIP SCAN) */}
+        <TouchableOpacity
+          activeOpacity={0.88}
+          style={[
+            styles.browseAllButton,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+          ]}
+          onPress={() => {
+            navigation.navigate("FaceMatchResults", {});
+          }}
+        >
+          <Ionicons name="images-outline" size={19} color={theme.text} />
+          <Text style={[styles.browseAllText, { color: theme.text }]}>
+            {language === "मराठी"
+              ? "सर्व इव्हेंट फोटो बघा (स्कॅन न करता)"
+              : language === "हिन्दी"
+                ? "सभी इवेंट फोटो देखें (बिना स्कैन)"
+                : "Browse All Event Photos (No Scan)"}
+          </Text>
+          <Ionicons name="arrow-forward" size={16} color={theme.textSecondary} />
         </TouchableOpacity>
 
         {/* PRIVACY NOTE */}
@@ -754,5 +790,42 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: "#FFFFFF",
+  },
+
+  eventBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+    marginBottom: 8,
+  },
+  eventDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  eventBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  browseAllButton: {
+    minHeight: 52,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 10,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  browseAllText: {
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1,
   },
 });

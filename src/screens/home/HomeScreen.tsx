@@ -346,6 +346,28 @@ export default function HomeScreen() {
               </Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={[
+                styles.eventBrowseAllButton,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.surfaceSoft || theme.surface,
+                },
+              ]}
+              onPress={() => navigation.navigate("FaceMatchResults", {})}
+            >
+              <Ionicons name="images-outline" size={17} color={theme.text} />
+              <Text style={[styles.eventBrowseAllText, { color: theme.text }]}>
+                {language === "मराठी"
+                  ? "सर्व इव्हेंट फोटो बघा"
+                  : language === "हिन्दी"
+                    ? "सभी इवेंट फोटो देखें"
+                    : "Browse All Event Photos"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
@@ -1382,5 +1404,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  eventBrowseAllButton: {
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+  eventBrowseAllText: {
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1,
+    marginLeft: 8,
   },
 });

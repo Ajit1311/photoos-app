@@ -7,6 +7,7 @@ export interface ActiveEventContext {
   eventName: string;
   studioName?: string;
   studioId?: string;
+  type?: "corporate" | "studio";
   sourceUrl?: string;
   detectedAt?: number;
 }
@@ -63,13 +64,30 @@ export async function detectEventFromUrlOrDeepLink(): Promise<ActiveEventContext
 export function parseEventFromUrl(urlString: string): ActiveEventContext | null {
   try {
     const url = new URL(urlString, "https://photoos.app");
-    const params = url.searchParams;
+    let params = url.searchParams;
+
+    // If query params are empty, check if hash contains query string (e.g. #/?event=... or #event=...)
+    if (!params.get("event") && !params.get("eventId") && url.hash) {
+      const hashContent = url.hash.replace(/^#\/?/, "");
+      if (hashContent.includes("?")) {
+        const hashQuery = hashContent.split("?")[1];
+        params = new URLSearchParams(hashQuery);
+      } else if (hashContent.includes("=")) {
+        params = new URLSearchParams(hashContent);
+      }
+    }
 
     const eventId =
       params.get("event") ||
       params.get("eventId") ||
       params.get("gallery") ||
       params.get("galleryId");
+
+    const rawType = params.get("type");
+    const detectedType: "corporate" | "studio" =
+      rawType === "corporate" || (eventId && (eventId.startsWith("ev_corp_") || eventId.startsWith("corp_")))
+        ? "corporate"
+        : "studio";
 
     if (!eventId) {
       // Check path segments: /gallery/[eventId] or /g/[token]
@@ -78,9 +96,12 @@ export function parseEventFromUrl(urlString: string): ActiveEventContext | null 
         (p) => p === "gallery" || p === "g" || p === "live"
       );
       if (galleryIndex !== -1 && pathParts[galleryIndex + 1]) {
+        const resolvedId = decodeURIComponent(pathParts[galleryIndex + 1]);
         return {
-          eventId: decodeURIComponent(pathParts[galleryIndex + 1]),
-          eventName: "Event Gallery",
+          eventId: resolvedId,
+          eventName: "Live Event Gallery",
+          studioName: "Photo Studio",
+          type: resolvedId.startsWith("ev_corp_") ? "corporate" : "studio",
           detectedAt: Date.now(),
           sourceUrl: urlString,
         };
@@ -92,20 +113,26 @@ export function parseEventFromUrl(urlString: string): ActiveEventContext | null 
       params.get("name") ||
       params.get("eventName") ||
       params.get("title") ||
-      "Live Event Gallery";
+      (detectedType === "corporate" ? "Corporate Celebration" : "Live Event Gallery");
 
     const studioName =
       params.get("studio") ||
       params.get("studioName") ||
-      "Photo Studio";
+      params.get("company") ||
+      params.get("companyName") ||
+      (detectedType === "corporate" ? "Corporate Office" : "Photo Studio");
 
-    const studioId = params.get("studioId") || undefined;
+    const studioId =
+      params.get("studioId") ||
+      params.get("companyId") ||
+      undefined;
 
     return {
       eventId: decodeURIComponent(eventId),
       eventName: decodeURIComponent(eventName),
       studioName: decodeURIComponent(studioName),
       studioId: studioId ? decodeURIComponent(studioId) : undefined,
+      type: detectedType,
       sourceUrl: urlString,
       detectedAt: Date.now(),
     };
