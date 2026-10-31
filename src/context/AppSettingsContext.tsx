@@ -1,0 +1,288 @@
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import * as SecureStore from "expo-secure-store";
+
+export type AppLanguage = "English" | "मराठी" | "हिन्दी";
+
+export type AppTheme = {
+  background: string;
+  surface: string;
+  surfaceSoft: string;
+  text: string;
+  textSecondary: string;
+  textMuted: string;
+  border: string;
+  primary: string;
+  primarySoft: string;
+  blue: string;
+  teal: string;
+  orange: string;
+  white: string;
+};
+
+const lightTheme: AppTheme = {
+  background: "#F2F2F7",
+  surface: "#FFFFFF",
+  surfaceSoft: "#E5E5EA",
+  text: "#000000",
+  textSecondary: "#6C6C70",
+  textMuted: "#8E8E93",
+  border: "#E5E5EA",
+  primary: "#007AFF",
+  primarySoft: "#EBF5FF",
+  blue: "#007AFF",
+  teal: "#30B0C7",
+  orange: "#FF9500",
+  white: "#FFFFFF",
+};
+
+const darkTheme: AppTheme = {
+  background: "#000000",
+  surface: "#1C1C1E",
+  surfaceSoft: "#2C2C2E",
+  text: "#FFFFFF",
+  textSecondary: "#8E8E93",
+  textMuted: "#636366",
+  border: "#38383A",
+  primary: "#0A84FF",
+  primarySoft: "#152A3F",
+  blue: "#0A84FF",
+  teal: "#40C8E0",
+  orange: "#FF9F0A",
+  white: "#FFFFFF",
+};
+
+const translations = {
+  English: {
+    welcomeBack: "Welcome back 👋",
+    tagline: "Capture • Create • Belong",
+    search: "Search studios, photographers, albums...",
+    quickAccess: "Quick Access",
+    bookings: "Bookings",
+    bookingsSub: "Your sessions",
+    albums: "Albums",
+    albumsSub: "Your memories",
+    payments: "Payments",
+    paymentsSub: "Transactions",
+    messages: "Messages",
+    messagesSub: "Talk to studios",
+    lastBooking: "Last Booking",
+    viewAll: "View all",
+    photographyStudio: "Your Photography Studio",
+    photographySession: "Photography session",
+    noBooking: "No upcoming booking",
+    explore: "Explore",
+    sponsored: "SPONSORED",
+    promote: "Promote your photography business",
+    discoverText:
+      "Discover studios, photographers and photography services on PhotoOS.",
+    exploreMarketplace: "Explore Marketplace",
+    recentAlbum: "Recent Album",
+    memories: "Your Memories",
+    memoriesText:
+      "Your latest photography albums will appear here.",
+    openAlbum: "Open album",
+    discoverStudios: "Discover studios near you",
+    discoverDescription:
+      "Find photographers, studios and photography services.",
+  },
+
+  "मराठी": {
+    welcomeBack: "आपलं स्वागत आहे 👋",
+    tagline: "कॅप्चर • क्रिएट • कनेक्ट",
+    search: "स्टुडिओ, फोटोग्राफर, अल्बम शोधा...",
+    quickAccess: "जलद प्रवेश",
+    bookings: "बुकिंग",
+    bookingsSub: "तुमची सत्रे",
+    albums: "अल्बम",
+    albumsSub: "तुमच्या आठवणी",
+    payments: "पेमेंट्स",
+    paymentsSub: "व्यवहार",
+    messages: "मेसेजेस",
+    messagesSub: "स्टुडिओशी बोला",
+    lastBooking: "शेवटची बुकिंग",
+    viewAll: "सर्व पहा",
+    photographyStudio: "तुमचा फोटोग्राफी स्टुडिओ",
+    photographySession: "फोटोग्राफी सत्र",
+    noBooking: "आगामी बुकिंग नाही",
+    explore: "एक्सप्लोर",
+    sponsored: "प्रायोजित",
+    promote: "तुमच्या फोटोग्राफी व्यवसायाचा प्रचार करा",
+    discoverText:
+      "PhotoOS वर स्टुडिओ, फोटोग्राफर आणि फोटोग्राफी सेवा शोधा.",
+    exploreMarketplace: "मार्केटप्लेस पहा",
+    recentAlbum: "अलीकडील अल्बम",
+    memories: "तुमच्या आठवणी",
+    memoriesText:
+      "तुमचे नवीन फोटोग्राफी अल्बम येथे दिसतील.",
+    openAlbum: "अल्बम उघडा",
+    discoverStudios: "तुमच्या जवळील स्टुडिओ शोधा",
+    discoverDescription:
+      "फोटोग्राफर, स्टुडिओ आणि फोटोग्राफी सेवा शोधा.",
+  },
+
+  "हिन्दी": {
+    welcomeBack: "आपका स्वागत है 👋",
+    tagline: "कैप्चर • क्रिएट • कनेक्ट",
+    search: "स्टूडियो, फोटोग्राफर, एल्बम खोजें...",
+    quickAccess: "त्वरित पहुंच",
+    bookings: "बुकिंग",
+    bookingsSub: "आपके सेशन",
+    albums: "एल्बम",
+    albumsSub: "आपकी यादें",
+    payments: "भुगतान",
+    paymentsSub: "लेन-देन",
+    messages: "संदेश",
+    messagesSub: "स्टूडियो से बात करें",
+    lastBooking: "पिछली बुकिंग",
+    viewAll: "सभी देखें",
+    photographyStudio: "आपका फोटोग्राफी स्टूडियो",
+    photographySession: "फोटोग्राफी सेशन",
+    noBooking: "कोई आगामी बुकिंग नहीं",
+    explore: "एक्सप्लोर",
+    sponsored: "प्रायोजित",
+    promote: "अपने फोटोग्राफी व्यवसाय का प्रचार करें",
+    discoverText:
+      "PhotoOS पर स्टूडियो, फोटोग्राफर और फोटोग्राफी सेवाएं खोजें।",
+    exploreMarketplace: "मार्केटप्लेस देखें",
+    recentAlbum: "हाल का एल्बम",
+    memories: "आपकी यादें",
+    memoriesText:
+      "आपके नवीनतम फोटोग्राफी एल्बम यहां दिखाई देंगे।",
+    openAlbum: "एल्बम खोलें",
+    discoverStudios: "अपने पास स्टूडियो खोजें",
+    discoverDescription:
+      "फोटोग्राफर, स्टूडियो और फोटोग्राफी सेवाएं खोजें।",
+  },
+} as const;
+
+type TranslationKey = keyof typeof translations.English;
+
+type AppSettingsContextType = {
+  darkMode: boolean;
+  language: AppLanguage;
+  languageCode: string;
+  theme: AppTheme;
+  t: (key: TranslationKey) => string;
+  setDarkMode: (value: boolean) => Promise<void>;
+  setLanguage: (value: AppLanguage) => Promise<void>;
+};
+
+const AppSettingsContext =
+  createContext<AppSettingsContextType | undefined>(undefined);
+
+const DARK_MODE_KEY = "photoos_dark_mode";
+const LANGUAGE_KEY = "photoos_language";
+
+const languageCodes: Record<AppLanguage, string> = {
+  English: "EN",
+  "मराठी": "MR",
+  "हिन्दी": "HI",
+};
+
+export function AppSettingsProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [darkMode, setDarkModeState] = useState(false);
+  const [language, setLanguageState] =
+    useState<AppLanguage>("English");
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const savedDark = await SecureStore.getItemAsync(
+          DARK_MODE_KEY
+        );
+
+        const savedLanguage = await SecureStore.getItemAsync(
+          LANGUAGE_KEY
+        );
+
+        if (savedDark !== null) {
+          setDarkModeState(savedDark === "true");
+        }
+
+        if (
+          savedLanguage === "English" ||
+          savedLanguage === "मराठी" ||
+          savedLanguage === "हिन्दी"
+        ) {
+          setLanguageState(savedLanguage);
+        }
+      } catch {
+        // Keep defaults.
+      }
+    };
+
+    loadSettings();
+  }, []);
+
+  const setDarkMode = async (value: boolean) => {
+    setDarkModeState(value);
+
+    try {
+      await SecureStore.setItemAsync(
+        DARK_MODE_KEY,
+        String(value)
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  };
+
+  const setLanguage = async (value: AppLanguage) => {
+    setLanguageState(value);
+
+    try {
+      await SecureStore.setItemAsync(
+        LANGUAGE_KEY,
+        value
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  };
+
+  const theme = darkMode ? darkTheme : lightTheme;
+
+  const t = (key: TranslationKey) =>
+    translations[language][key];
+
+  const value = useMemo(
+    () => ({
+      darkMode,
+      language,
+      languageCode: languageCodes[language],
+      theme,
+      t,
+      setDarkMode,
+      setLanguage,
+    }),
+    [darkMode, language]
+  );
+
+  return (
+    <AppSettingsContext.Provider value={value}>
+      {children}
+    </AppSettingsContext.Provider>
+  );
+}
+
+export function useAppSettings() {
+  const context = useContext(AppSettingsContext);
+
+  if (!context) {
+    throw new Error(
+      "useAppSettings must be used inside AppSettingsProvider"
+    );
+  }
+
+  return context;
+}

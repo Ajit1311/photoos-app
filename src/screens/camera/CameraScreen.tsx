@@ -1,0 +1,758 @@
+import React, { useState } from "react";
+import {
+  Alert,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import {
+  CameraView,
+  useCameraPermissions,
+  type CameraType,
+} from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../../navigation/navigation-types";
+import { typography } from "../../theme/typography";
+import { useAppSettings } from "../../context/AppSettingsContext";
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+export default function CameraScreen() {
+  const navigation = useNavigation<NavigationProp>();
+  const { theme, language } = useAppSettings();
+
+  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraType, setCameraType] = useState<CameraType>("front");
+  const [cameraRef, setCameraRef] = useState<CameraView | null>(null);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+
+  const takeSelfieText =
+    language === "मराठी"
+      ? "सेल्फी घ्या"
+      : language === "हिन्दी"
+        ? "सेल्फी लें"
+        : "Take a Selfie";
+
+  const uploadText =
+    language === "मराठी"
+      ? "फोटो अपलोड करा"
+      : language === "हिन्दी"
+        ? "फोटो अपलोड करें"
+        : "Upload your Photo";
+
+  const subtitle =
+    language === "मराठी"
+      ? "तुमचा फोटो वापरून तुमचे matching photos शोधा"
+      : language === "हिन्दी"
+        ? "अपनी फोटो से अपने matching photos खोजें"
+        : "Find your matching photos using your face";
+
+  const handleTakeSelfie = async () => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+
+      if (!result.granted) {
+        Alert.alert(
+          "Camera Permission",
+          "PhotoOS needs camera access to take your selfie."
+        );
+        return;
+      }
+    }
+
+    setCameraOpen(true);
+  };
+
+  const handleUploadPhoto = async () => {
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert(
+        "Photo Permission",
+        "PhotoOS needs photo library access to select your photo."
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      startFaceMatching(result.assets[0].uri);
+    }
+  };
+
+  const handleCapture = async () => {
+    if (!cameraRef) return;
+
+    try {
+      const photo = await cameraRef.takePictureAsync({
+        quality: 0.9,
+      });
+
+      if (photo?.uri) {
+        setCameraOpen(false);
+        startFaceMatching(photo.uri);
+      }
+    } catch {
+      Alert.alert("Camera", "Unable to capture the photo. Please try again.");
+    }
+  };
+
+  const startFaceMatching = (uri: string) => {
+    setPreviewUri(uri);
+
+    navigation.navigate("FaceMatchResults", {
+      selfieUri: uri,
+    });
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* SAME HEADER STYLE AS HOME */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate("Main")}
+        >
+          <View
+            style={[
+              styles.logoBox,
+              {
+                backgroundColor: theme.primary,
+              },
+            ]}
+          >
+            <Ionicons name="camera" size={19} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[
+              styles.headerIcon,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+            onPress={() => navigation.navigate("Appearance")}
+          >
+            <Ionicons
+              name="moon-outline"
+              size={19}
+              color={theme.text}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.languageButton,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+            onPress={() => navigation.navigate("Language")}
+          >
+            <Text style={[styles.languageText, { color: theme.text }]}>
+              {language === "मराठी"
+                ? "MR"
+                : language === "हिन्दी"
+                  ? "HI"
+                  : "EN"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.headerIcon,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+            onPress={() => navigation.navigate("Notifications")}
+          >
+            <Ionicons
+              name="notifications-outline"
+              size={19}
+              color={theme.text}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.content}>
+        <View style={styles.titleBlock}>
+          <Text style={[styles.title, { color: theme.text }]}>
+            Find Your Photos
+          </Text>
+
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            {subtitle}
+          </Text>
+        </View>
+
+        {/* SELFIE PREVIEW / FACE SEARCH CARD */}
+        <View
+          style={[
+            styles.previewCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          {previewUri ? (
+            <Image
+              source={{ uri: previewUri }}
+              style={styles.previewImage}
+            />
+          ) : (
+            <View
+              style={[
+                styles.facePlaceholder,
+                {
+                  backgroundColor: theme.surfaceSoft,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.faceCircle,
+                  {
+                    backgroundColor: theme.primarySoft,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="scan-outline"
+                  size={42}
+                  color={theme.primary}
+                />
+              </View>
+
+              <Text style={[styles.placeholderTitle, { color: theme.text }]}>
+                AI Face Search
+              </Text>
+
+              <Text
+                style={[
+                  styles.placeholderText,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                Take or upload your photo to find photos that match your face.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* TAKE SELFIE */}
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={[
+            styles.primaryButton,
+            {
+              backgroundColor: theme.primary,
+            },
+          ]}
+          onPress={handleTakeSelfie}
+        >
+          <View style={styles.buttonIcon}>
+            <Ionicons name="camera" size={22} color="#FFFFFF" />
+          </View>
+
+          <View style={styles.buttonTextBlock}>
+            <Text style={styles.primaryButtonTitle}>
+              {takeSelfieText}
+            </Text>
+
+            <Text style={styles.primaryButtonSubtitle}>
+              Open camera & scan your face
+            </Text>
+          </View>
+
+          <Ionicons
+            name="chevron-forward"
+            size={21}
+            color="#FFFFFF"
+          />
+        </TouchableOpacity>
+
+        {/* UPLOAD */}
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={[
+            styles.secondaryButton,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+          ]}
+          onPress={handleUploadPhoto}
+        >
+          <View
+            style={[
+              styles.secondaryIcon,
+              {
+                backgroundColor: theme.primarySoft,
+              },
+            ]}
+          >
+            <Ionicons
+              name="cloud-upload-outline"
+              size={22}
+              color={theme.primary}
+            />
+          </View>
+
+          <View style={styles.buttonTextBlock}>
+            <Text
+              style={[
+                styles.secondaryButtonTitle,
+                { color: theme.text },
+              ]}
+            >
+              {uploadText}
+            </Text>
+
+            <Text
+              style={[
+                styles.secondaryButtonSubtitle,
+                { color: theme.textSecondary },
+              ]}
+            >
+              Choose from your gallery
+            </Text>
+          </View>
+
+          <Ionicons
+            name="chevron-forward"
+            size={21}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+
+        {/* PRIVACY NOTE */}
+        <View style={styles.privacyRow}>
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={17}
+            color={theme.primary}
+          />
+
+          <View style={styles.privacyTextBlock}>
+            <Text
+              style={[
+                styles.privacyText,
+                { color: theme.textMuted },
+              ]}
+            >
+              Your photo is used only for face matching.
+            </Text>
+
+            <Text
+              style={[
+                styles.privacyText,
+                { color: theme.textMuted },
+              ]}
+            >
+              Your data is end-to-end encrypted.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* CAMERA MODAL */}
+      <Modal
+        visible={cameraOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setCameraOpen(false)}
+      >
+        <View style={styles.cameraContainer}>
+          <CameraView
+            ref={(ref) => setCameraRef(ref)}
+            style={StyleSheet.absoluteFill}
+            facing={cameraType}
+          />
+
+          <View style={styles.cameraOverlay}>
+            <View style={styles.cameraTopBar}>
+              <TouchableOpacity
+                style={styles.cameraClose}
+                onPress={() => setCameraOpen(false)}
+              >
+                <Ionicons name="close" size={27} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <Text style={styles.cameraTitle}>
+                Take a Selfie
+              </Text>
+
+              <TouchableOpacity
+                style={styles.cameraClose}
+                onPress={() =>
+                  setCameraType((current) =>
+                    current === "front" ? "back" : "front"
+                  )
+                }
+              >
+                <Ionicons
+                  name="camera-reverse-outline"
+                  size={25}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.faceGuide}>
+              <View style={styles.guideCornerTopLeft} />
+              <View style={styles.guideCornerTopRight} />
+              <View style={styles.guideCornerBottomLeft} />
+              <View style={styles.guideCornerBottomRight} />
+            </View>
+
+            <View style={styles.cameraBottom}>
+              <Text style={styles.cameraInstruction}>
+                Position your face inside the frame
+              </Text>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.captureButton}
+                onPress={handleCapture}
+              >
+                <View style={styles.captureInner} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  logoBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  headerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  languageButton: {
+    minWidth: 40,
+    height: 38,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  languageText: {
+    ...typography.caption,
+    fontWeight: "700",
+  },
+
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+
+  titleBlock: {
+    marginBottom: 20,
+  },
+
+  title: {
+    ...typography.largeTitle,
+  },
+
+  subtitle: {
+    ...typography.body,
+    marginTop: 6,
+    maxWidth: 330,
+  },
+
+  previewCard: {
+    height: 245,
+    borderRadius: 26,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 18,
+  },
+
+  previewImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+
+  facePlaceholder: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+
+  faceCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+
+  placeholderTitle: {
+    ...typography.title3,
+    marginBottom: 6,
+  },
+
+  placeholderText: {
+    ...typography.callout,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+
+  primaryButton: {
+    minHeight: 78,
+    borderRadius: 22,
+    paddingHorizontal: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  buttonIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  buttonTextBlock: {
+    flex: 1,
+    marginLeft: 13,
+  },
+
+  primaryButtonTitle: {
+    ...typography.button,
+    color: "#FFFFFF",
+  },
+
+  primaryButtonSubtitle: {
+    ...typography.caption,
+    color: "rgba(255,255,255,0.72)",
+    marginTop: 3,
+  },
+
+  secondaryButton: {
+    minHeight: 78,
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 17,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  secondaryIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  secondaryButtonTitle: {
+    ...typography.button,
+  },
+
+  secondaryButtonSubtitle: {
+    ...typography.caption,
+    marginTop: 3,
+  },
+
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+    paddingHorizontal: 15,
+  },
+
+  privacyTextBlock: {
+    flex: 1,
+    marginLeft: 7,
+  },
+
+  privacyText: {
+    ...typography.caption,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
+
+  cameraOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: "space-between",
+  },
+
+  cameraTopBar: {
+    paddingTop: 55,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  cameraClose: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  cameraTitle: {
+    ...typography.title3,
+    color: "#FFFFFF",
+  },
+
+  faceGuide: {
+    width: 260,
+    height: 330,
+    alignSelf: "center",
+    position: "relative",
+  },
+
+  guideCornerTopLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: 45,
+    height: 45,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderColor: "#FFFFFF",
+    borderTopLeftRadius: 25,
+  },
+
+  guideCornerTopRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    width: 45,
+    height: 45,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderColor: "#FFFFFF",
+    borderTopRightRadius: 25,
+  },
+
+  guideCornerBottomLeft: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    width: 45,
+    height: 45,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderColor: "#FFFFFF",
+    borderBottomLeftRadius: 25,
+  },
+
+  guideCornerBottomRight: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    width: 45,
+    height: 45,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderColor: "#FFFFFF",
+    borderBottomRightRadius: 25,
+  },
+
+  cameraBottom: {
+    alignItems: "center",
+    paddingBottom: 42,
+  },
+
+  cameraInstruction: {
+    ...typography.callout,
+    color: "#FFFFFF",
+    marginBottom: 22,
+  },
+
+  captureButton: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 5,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  captureInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#FFFFFF",
+  },
+});

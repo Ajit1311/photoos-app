@@ -1,0 +1,23 @@
+export const colors = {
+  primary: "#0A3F61",
+  primaryDark: "#0A3F61",
+  primarySoft: "#E6EEF3",
+
+  background: "#EEF2F5",
+  surface: "#FFFFFF",
+  surfaceSoft: "#F7F9FB",
+
+  text: "#172033",
+  textSecondary: "#64748B",
+  textMuted: "#94A3B8",
+
+  border: "#DCE3E8",
+  success: "#168A5B",
+  warning: "#C77B00",
+  danger: "#C0392B",
+
+  white: "#FFFFFF",
+  black: "#000000",
+} as const;
+
+export type AppColor = keyof typeof colors;
