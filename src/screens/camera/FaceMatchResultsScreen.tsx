@@ -131,14 +131,22 @@ export default function FaceMatchResultsScreen() {
 
   // Load live event gallery photos from backend
   const loadGalleryAndMatch = useCallback(async () => {
-    const currentEvent = activeEvent || getActiveEventContextSync();
-    const eventId = currentEvent?.eventId || "ev_corp_default";
+    const currentEvent = getActiveEventContextSync() || activeEvent;
+    if (!currentEvent?.eventId) {
+      setMatchingState("done");
+      setViewTab("all");
+      setAllPhotos([]);
+      setMatchedPhotos([]);
+      return;
+    }
+
+    const eventId = currentEvent.eventId;
 
     try {
       setMatchingState("loading_gallery");
       setStatusMessage("Connecting to PhotoOS live gallery...");
 
-      const galleryResult = await fetchLiveEventGallery(eventId, currentEvent?.type);
+      const galleryResult = await fetchLiveEventGallery(eventId, currentEvent.type);
       setEventInfo(galleryResult.event);
       setAllPhotos(galleryResult.photos);
 

@@ -1,8 +1,9 @@
 /**
  * Live Event & Photo Synchronization Service
- * Fetches real event photos from PhotoOS production APIs:
- * - Studio Galleries: https://app.photoos.in/api/gallery/${eventId}
+ * Strictly enforces event & portal isolation:
  * - Corporate Events: https://app.photoos.in/api/corporate/photos?eventId=${eventId}
+ * - Studio Galleries: https://app.photoos.in/api/gallery/${eventId}
+ * Ensures photos from one event are NEVER shown in another event.
  */
 
 export interface LiveEventPhoto {
@@ -37,6 +38,14 @@ export interface LiveGalleryResult {
 
 const BACKEND_BASE_URL = "https://app.photoos.in";
 
+function normalizeMediaUrl(url: string | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("/")) {
+    return `${BACKEND_BASE_URL}${url}`;
+  }
+  return url;
+}
+
 export async function fetchLiveEventGallery(
   eventId: string,
   hintType?: "corporate" | "studio"
@@ -69,7 +78,94 @@ export async function fetchLiveEventGallery(
     type: isCorporate ? "corporate" : "studio",
   };
 
-  // 1. Primary Attempt: /api/gallery/[eventId] (Supports both Studio and Corporate manifests)
+  // =========================================================================
+  // CASE 1: CORPORATE EVENT
+  // Strictly loads only this corporate event's photos from corporate manifest
+  // =========================================================================
+  if (isCorporate) {
+    try {
+      const corpRes = await fetch(
+        `${BACKEND_BASE_URL}/api/corporate/photos?eventId=${encodeURIComponent(normalizedId)}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (corpRes.ok) {
+        const corpData = await corpRes.json();
+        if (corpData?.success && Array.isArray(corpData.photos)) {
+          fetchedPhotos = corpData.photos.map((cp: any, idx: number) => {
+            const rawUrl = cp.url || cp.thumbnail_url;
+            const fullUrl = normalizeMediaUrl(rawUrl);
+            return {
+              id: cp.id || `corp_${idx}`,
+              eventId: normalizedId,
+              url: fullUrl,
+              thumbnailUrl: normalizeMediaUrl(cp.thumbnail_url || rawUrl),
+              name: cp.name || `Photo ${idx + 1}`,
+              uploadedAt: cp.uploaded_at,
+              sizeBytes: cp.size_bytes,
+              category: "Corporate",
+            };
+          });
+        }
+      }
+    } catch (corpErr) {
+      console.warn("[LiveEventService] Corporate fetch notice:", corpErr);
+    }
+
+    // Secondary attempt via unified /api/gallery/[eventId] if primary had 0 photos
+    if (fetchedPhotos.length === 0) {
+      try {
+        const galleryRes = await fetch(
+          `${BACKEND_BASE_URL}/api/gallery/${encodeURIComponent(normalizedId)}`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        if (galleryRes.ok) {
+          const data = await galleryRes.json();
+          if (data?.success) {
+            if (data?.event?.name) eventInfo.name = data.event.name;
+            if (data?.studio?.name) eventInfo.studioName = data.studio.name;
+            if (Array.isArray(data.photos)) {
+              fetchedPhotos = data.photos.map((p: any, idx: number) => ({
+                id: p.id || `photo_${idx}`,
+                eventId: normalizedId,
+                url: normalizeMediaUrl(p.originalUrl || p.thumbnailUrl),
+                thumbnailUrl: normalizeMediaUrl(p.thumbnailUrl || p.originalUrl),
+                name: p.fileName || `Photo ${idx + 1}`,
+                uploadedAt: p.uploadedAt,
+                width: p.width,
+                height: p.height,
+                sizeBytes: p.fileSize,
+                category: "Corporate",
+              }));
+            }
+          }
+        }
+      } catch {}
+    }
+
+    return {
+      success: true,
+      event: eventInfo,
+      photos: fetchedPhotos,
+    };
+  }
+
+  // =========================================================================
+  // CASE 2: STUDIO EVENT
+  // Strictly loads only this studio event's photos from studio database/gallery
+  // NEVER mixes with corporate events!
+  // =========================================================================
   try {
     const galleryRes = await fetch(
       `${BACKEND_BASE_URL}/api/gallery/${encodeURIComponent(normalizedId)}`,
@@ -90,12 +186,12 @@ export async function fetchLiveEventGallery(
         if (data?.event?.shoot_date) eventInfo.shootDate = data.event.shoot_date;
         if (data?.event?.venue) eventInfo.venue = data.event.venue;
 
-        if (Array.isArray(data.photos) && data.photos.length > 0) {
+        if (Array.isArray(data.photos)) {
           fetchedPhotos = data.photos.map((p: any, idx: number) => ({
             id: p.id || `photo_${idx}`,
             eventId: normalizedId,
-            url: p.originalUrl || p.thumbnailUrl,
-            thumbnailUrl: p.thumbnailUrl || p.originalUrl,
+            url: normalizeMediaUrl(p.originalUrl || p.thumbnailUrl),
+            thumbnailUrl: normalizeMediaUrl(p.thumbnailUrl || p.originalUrl),
             name: p.fileName || `Photo ${idx + 1}`,
             uploadedAt: p.uploadedAt,
             width: p.width,
@@ -107,40 +203,7 @@ export async function fetchLiveEventGallery(
       }
     }
   } catch (galleryErr) {
-    console.warn("[LiveEventService] /api/gallery fetch notice:", galleryErr);
-  }
-
-  // 2. Fallback Attempt for Corporate Events: /api/corporate/photos
-  if (fetchedPhotos.length === 0) {
-    try {
-      const corpRes = await fetch(
-        `${BACKEND_BASE_URL}/api/corporate/photos?eventId=${encodeURIComponent(normalizedId)}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
-        }
-      );
-
-      if (corpRes.ok) {
-        const corpData = await corpRes.json();
-        if (corpData?.success && Array.isArray(corpData.photos)) {
-          fetchedPhotos = corpData.photos.map((cp: any, idx: number) => ({
-            id: cp.id || `corp_${idx}`,
-            eventId: normalizedId,
-            url: cp.url || cp.thumbnail_url,
-            thumbnailUrl: cp.thumbnail_url || cp.url,
-            name: cp.name || `Photo ${idx + 1}`,
-            uploadedAt: cp.uploaded_at,
-            sizeBytes: cp.size_bytes,
-            category: "Corporate",
-          }));
-        }
-      }
-    } catch (corpErr) {
-      console.warn("[LiveEventService] /api/corporate/photos fallback notice:", corpErr);
-    }
+    console.warn("[LiveEventService] Studio gallery fetch notice:", galleryErr);
   }
 
   return {

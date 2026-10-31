@@ -7,7 +7,7 @@ export interface ActiveEventContext {
   eventName: string;
   studioName?: string;
   studioId?: string;
-  type?: "corporate" | "studio";
+  type: "corporate" | "studio";
   sourceUrl?: string;
   detectedAt?: number;
 }
@@ -17,10 +17,6 @@ const STORAGE_KEY_ACTIVE_EVENT = "@photoos_active_event_context";
 let cachedEventContext: ActiveEventContext | null = null;
 
 export async function detectEventFromUrlOrDeepLink(): Promise<ActiveEventContext | null> {
-  if (cachedEventContext) {
-    return cachedEventContext;
-  }
-
   let fullUrl: string | null = null;
 
   if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -33,6 +29,7 @@ export async function detectEventFromUrlOrDeepLink(): Promise<ActiveEventContext
     }
   }
 
+  // 1. Current URL always takes highest precedence (switches active event on new QR scan)
   if (fullUrl) {
     const parsed = parseEventFromUrl(fullUrl);
     if (parsed) {
@@ -46,7 +43,12 @@ export async function detectEventFromUrlOrDeepLink(): Promise<ActiveEventContext
     }
   }
 
-  // Fallback to persisted active event in storage
+  // 2. In-memory cached event
+  if (cachedEventContext) {
+    return cachedEventContext;
+  }
+
+  // 3. Fallback to persisted active event in storage
   try {
     const stored = await getStorageItem(STORAGE_KEY_ACTIVE_EVENT);
     if (stored) {
@@ -153,5 +155,12 @@ export async function setActiveEventContext(
 }
 
 export function getActiveEventContextSync(): ActiveEventContext | null {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const fromUrl = parseEventFromUrl(window.location.href);
+    if (fromUrl) {
+      cachedEventContext = fromUrl;
+      return fromUrl;
+    }
+  }
   return cachedEventContext;
 }
