@@ -8,6 +8,7 @@ export interface ActiveEventContext {
   studioName?: string;
   studioId?: string;
   type: "corporate" | "studio";
+  requireFaceMatch?: boolean;
   sourceUrl?: string;
   detectedAt?: number;
 }
@@ -135,6 +136,7 @@ export function parseEventFromUrl(urlString: string): ActiveEventContext | null 
       studioName: decodeURIComponent(studioName),
       studioId: studioId ? decodeURIComponent(studioId) : undefined,
       type: detectedType,
+      requireFaceMatch: params.get("requireFaceMatch") !== "false",
       sourceUrl: urlString,
       detectedAt: Date.now(),
     };

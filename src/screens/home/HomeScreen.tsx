@@ -339,16 +339,15 @@ export default function HomeScreen() {
               <Ionicons name="scan-outline" size={20} color="#FFFFFF" />
               <Text style={styles.eventHeroButtonText}>
                 {language === "मराठी"
-                  ? "चेहरा स्कॅन करून फोटो शोधा"
+                  ? "चेहरा स्कॅन करून तुमचे फोटो मिळवा"
                   : language === "हिन्दी"
-                    ? "फेस स्कैन से फोटो खोजें"
-                    : "Scan Face to Find Photos"}
+                    ? "फेस स्कैन करके अपने फोटो पाएं"
+                    : "Scan Face to Unlock Your Photos"}
               </Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.88}
+            <View
               style={[
                 styles.eventBrowseAllButton,
                 {
@@ -356,18 +355,16 @@ export default function HomeScreen() {
                   backgroundColor: theme.surfaceSoft || theme.surface,
                 },
               ]}
-              onPress={() => navigation.navigate("FaceMatchResults", {})}
             >
-              <Ionicons name="images-outline" size={17} color={theme.text} />
-              <Text style={[styles.eventBrowseAllText, { color: theme.text }]}>
+              <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
+              <Text style={[styles.eventBrowseAllText, { color: theme.textSecondary, flex: 1 }]}>
                 {language === "मराठी"
-                  ? "सर्व इव्हेंट फोटो बघा"
+                  ? "सुरक्षित AI प्रायव्हसी: तुमचे फोटो फक्त तुम्हालाच दिसतील"
                   : language === "हिन्दी"
-                    ? "सभी इवेंट फोटो देखें"
-                    : "Browse All Event Photos"}
+                    ? "सुरक्षित AI प्राइवेसी: आपकी तस्वीरें केवल आपको दिखेंगी"
+                    : "Encrypted & Private: Only your matched photos will be visible"}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-            </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <TouchableOpacity
