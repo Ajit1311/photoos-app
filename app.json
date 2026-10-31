@@ -18,7 +18,11 @@
         "monochromeImage": "./assets/PhotoOS-app-icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.photoos.app"
+      "package": "com.photoos.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/PhotoOS-favicon.png"
@@ -28,6 +32,11 @@
       "expo-camera",
       "@react-native-community/datetimepicker"
     ],
-    "favicon": "./assets/PhotoOS-favicon.png"
+    "favicon": "./assets/PhotoOS-favicon.png",
+    "extra": {
+      "eas": {
+        "projectId": "fc1266a0-225f-4e58-83fd-d119c7d59a53"
+      }
+    }
   }
 }
