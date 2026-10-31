@@ -11,6 +11,7 @@
       "bundleIdentifier": "com.photoos.app"
     },
     "android": {
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#0F589B",
         "foregroundImage": "./assets/PhotoOS-app-icon.png",

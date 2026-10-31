@@ -8,7 +8,7 @@ import {
 
 const PHOTOOS_API_URL =
   process.env.EXPO_PUBLIC_PHOTOOS_API_URL ??
-  "http://127.0.0.1:54321/functions/v1";
+  "http://192.168.1.3:54321/functions/v1";
 
 interface ProvisionResponse {
   success: boolean;
