@@ -117,43 +117,8 @@ export async function fetchLiveEventGallery(
       console.warn("[LiveEventService] Corporate fetch notice:", corpErr);
     }
 
-    // Secondary attempt via unified /api/gallery/[eventId] if primary had 0 photos
-    if (fetchedPhotos.length === 0) {
-      try {
-        const galleryRes = await fetch(
-          `${BACKEND_BASE_URL}/api/gallery/${encodeURIComponent(normalizedId)}`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (galleryRes.ok) {
-          const data = await galleryRes.json();
-          if (data?.success) {
-            if (data?.event?.name) eventInfo.name = data.event.name;
-            if (data?.studio?.name) eventInfo.studioName = data.studio.name;
-            if (Array.isArray(data.photos)) {
-              fetchedPhotos = data.photos.map((p: any, idx: number) => ({
-                id: p.id || `photo_${idx}`,
-                eventId: normalizedId,
-                url: normalizeMediaUrl(p.originalUrl || p.thumbnailUrl),
-                thumbnailUrl: normalizeMediaUrl(p.thumbnailUrl || p.originalUrl),
-                name: p.fileName || `Photo ${idx + 1}`,
-                uploadedAt: p.uploadedAt,
-                width: p.width,
-                height: p.height,
-                sizeBytes: p.fileSize,
-                category: "Corporate",
-              }));
-            }
-          }
-        }
-      } catch {}
-    }
-
+    // STRICT ISOLATION: A Corporate Event must ONLY load Corporate photos.
+    // Under no circumstances should studio photos be leaked into corporate events.
     return {
       success: true,
       event: eventInfo,

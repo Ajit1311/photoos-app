@@ -340,7 +340,9 @@ export default function HomeScreen() {
             <View style={styles.eventHeroBadgeRow}>
               <View style={styles.eventLiveBadge}>
                 <View style={styles.eventLiveDot} />
-                <Text style={styles.eventLiveText}>EVENT GALLERY ACTIVE</Text>
+                <Text style={styles.eventLiveText}>
+                  {activeEvent.type === "corporate" ? "🏢 CORPORATE EVENT" : "📸 STUDIO EVENT"}
+                </Text>
               </View>
 
               <View style={[styles.eventPhotoCountBadge, { backgroundColor: `${colors.primary}15` }]}>
@@ -356,7 +358,7 @@ export default function HomeScreen() {
             </Text>
 
             <Text style={[styles.eventStudioText, { color: theme.textSecondary, marginBottom: 8 }]}>
-              📍 {activeEvent.studioName || "Corporate Event"}
+              📍 {activeEvent.studioName || (activeEvent.type === "corporate" ? "Corporate Office" : "Photo Studio")}
             </Text>
 
             {/* EVENT PHOTOS PREVIEW STRIP */}
