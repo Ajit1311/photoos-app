@@ -38,6 +38,9 @@
       "expo-camera",
       "@react-native-community/datetimepicker"
     ],
+    "experiments": {
+      "baseUrl": "/photoos-app"
+    },
     "extra": {
       "eas": {
         "projectId": "fc1266a0-225f-4e58-83fd-d119c7d59a53"
