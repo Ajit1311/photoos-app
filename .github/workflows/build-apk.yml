@@ -17,8 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
 
       - name: Setup Java (JDK 17)
         uses: actions/setup-java@v4
@@ -30,7 +29,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm ci || npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: Prebuild Native Android Project
         run: npx expo prebuild --platform android --clean
@@ -46,4 +45,3 @@ jobs:
           name: PhotoOS-Android-APK
           path: android/app/build/outputs/apk/**/*.apk
           retention-days: 14
-
