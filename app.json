@@ -8,7 +8,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.photoos.app"
+      "bundleIdentifier": "com.photoos.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "PhotoOS needs camera access to capture your selfie and verify your photos.",
+        "NSPhotoLibraryUsageDescription": "PhotoOS needs access to your photo library to select and upload photos.",
+        "NSMicrophoneUsageDescription": "PhotoOS needs microphone access for video capture."
+      }
     },
     "android": {
       "usesCleartextTraffic": true,
