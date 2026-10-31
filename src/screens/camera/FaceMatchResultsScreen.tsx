@@ -153,8 +153,9 @@ export default function FaceMatchResultsScreen() {
       const photos = galleryResult.photos;
 
       if (!selfieUri) {
-        // Require face scan for privacy & security: guest must match face before seeing photos
-        setMatchingState("no_face_in_selfie");
+        // Direct event access or browse: show all photos immediately
+        setViewTab("all");
+        setMatchingState("done");
         return;
       }
 
@@ -362,12 +363,25 @@ export default function FaceMatchResultsScreen() {
 
             <View style={styles.errorActionRow}>
               <TouchableOpacity
-                style={[styles.retakeButton, { backgroundColor: theme.primary, width: "100%" }]}
+                style={[styles.retakeButton, { backgroundColor: theme.primary }]}
                 onPress={() => navigation.navigate("Main", { screen: "Camera" })}
               >
                 <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.retakeText}>
-                  {language === "मराठी" ? "चेहरा स्कॅन सुरू करा (Scan Face)" : t.retakeSelfie}
+                  {language === "मराठी" ? "चेहरा स्कॅन करा (Scan Face)" : t.retakeSelfie}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.browseButton, { borderColor: theme.border }]}
+                onPress={() => {
+                  setViewTab("all");
+                  setMatchingState("done");
+                }}
+              >
+                <Ionicons name="images-outline" size={16} color={theme.text} />
+                <Text style={[styles.browseText, { color: theme.text }]}>
+                  {language === "मराठी" ? "सर्व फोटो बघा" : t.browseAll}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -385,30 +399,97 @@ export default function FaceMatchResultsScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* TAB BAR: PRIVACY ENFORCED MATCHED PHOTOS */}
+          {/* TAB BAR: DUAL TABS FOR MATCHED PHOTOS AND ALL EVENT PHOTOS */}
           <View style={[styles.tabBarWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View
+            <TouchableOpacity
               style={[
                 styles.tabButton,
-                styles.tabButtonActive,
-                { backgroundColor: theme.primary, width: "100%", justifyContent: "center" },
+                viewTab === "matched" && [styles.tabButtonActive, { backgroundColor: theme.primary }],
               ]}
+              onPress={() => setViewTab("matched")}
             >
               <Ionicons
-                name="shield-checkmark"
-                size={16}
-                color="#FFFFFF"
+                name="sparkles"
+                size={15}
+                color={viewTab === "matched" ? "#FFFFFF" : theme.textSecondary}
               />
               <Text
                 style={[
                   styles.tabButtonText,
-                  { color: "#FFFFFF", fontWeight: "bold" },
+                  { color: viewTab === "matched" ? "#FFFFFF" : theme.textSecondary },
                 ]}
               >
-                {t.matchedTab} ({matchedPhotos.length}) • 100% प्रायव्हसी सुरक्षित
+                {t.matchedTab} ({matchedPhotos.length})
               </Text>
-            </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                viewTab === "all" && [styles.tabButtonActive, { backgroundColor: theme.primary }],
+              ]}
+              onPress={() => setViewTab("all")}
+            >
+              <Ionicons
+                name="images-outline"
+                size={15}
+                color={viewTab === "all" ? "#FFFFFF" : theme.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.tabButtonText,
+                  { color: viewTab === "all" ? "#FFFFFF" : theme.textSecondary },
+                ]}
+              >
+                {t.allTab} ({allPhotos.length})
+              </Text>
+            </TouchableOpacity>
           </View>
+
+          {/* ALL PHOTOS WELCOME BANNER (IF NO SELFIE TAKEN YET) */}
+          {viewTab === "all" && !selfieUri && (
+            <View
+              style={[
+                styles.summaryBanner,
+                {
+                  backgroundColor: `${theme.primary}12`,
+                  borderColor: `${theme.primary}30`,
+                },
+              ]}
+            >
+              <View style={styles.summaryLeft}>
+                <View style={[styles.aiIconBadge, { backgroundColor: `${theme.primary}25` }]}>
+                  <Ionicons name="sparkles" size={20} color={theme.primary} />
+                </View>
+                <View style={styles.summaryTextGroup}>
+                  <Text style={[styles.summaryHeading, { color: theme.text }]}>
+                    {language === "मराठी"
+                      ? "तुमचे स्वतःचे फोटो शोधायचे आहेत?"
+                      : language === "हिन्दी"
+                        ? "अपनी खुद की तस्वीरें खोजनी हैं?"
+                        : "Find your photos with AI"}
+                  </Text>
+                  <Text style={[styles.summaryDescription, { color: theme.textSecondary }]}>
+                    {language === "मराठी"
+                      ? "चेहरा स्कॅन करून फक्त तुमचे फोटो 1 सेकंदात शोधा."
+                      : language === "हिन्दी"
+                        ? "फेस स्कैन करें और तुरंत अपनी तस्वीरें पाएं।"
+                        : "Scan your face once to filter only your photos."}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.takeSelfieButton, { backgroundColor: theme.primary }]}
+                onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+              >
+                <Ionicons name="scan-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.takeSelfieText}>
+                  {language === "मराठी" ? "स्कॅन करा ✨" : "Scan Face ✨"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* SUMMARY BANNER */}
           {viewTab === "matched" && (

@@ -34,6 +34,10 @@ import {
   getActiveEventContextSync,
   type ActiveEventContext,
 } from "../../services/event-gallery/event-qr-detector";
+import {
+  fetchLiveEventGallery,
+  type LiveEventPhoto,
+} from "../../services/event-gallery/live-event-photos.service";
 
 const sponsoredAds = [
   {
@@ -128,6 +132,8 @@ export default function HomeScreen() {
   const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(
     () => getActiveEventContextSync()
   );
+  const [eventPhotos, setEventPhotos] = useState<LiveEventPhoto[]>([]);
+  const [loadingEventPhotos, setLoadingEventPhotos] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -137,6 +143,28 @@ export default function HomeScreen() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!activeEvent?.eventId) return;
+    let isMounted = true;
+    setLoadingEventPhotos(true);
+    fetchLiveEventGallery(activeEvent.eventId, activeEvent.type)
+      .then((res) => {
+        if (isMounted && res.photos) {
+          setEventPhotos(res.photos);
+        }
+      })
+      .catch((err) => {
+        console.warn("[HomeScreen] Unable to load event preview photos:", err);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingEventPhotos(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeEvent?.eventId, activeEvent?.type]);
 
   useEffect(() => {
     let mounted = true;
@@ -314,57 +342,113 @@ export default function HomeScreen() {
                 <View style={styles.eventLiveDot} />
                 <Text style={styles.eventLiveText}>EVENT GALLERY ACTIVE</Text>
               </View>
-              <Text style={[styles.eventStudioText, { color: theme.textSecondary }]}>
-                {activeEvent.studioName || "Photo Studio"}
-              </Text>
+
+              <View style={[styles.eventPhotoCountBadge, { backgroundColor: `${colors.primary}15` }]}>
+                <Ionicons name="images" size={12} color={colors.primary} />
+                <Text style={[styles.eventPhotoCountText, { color: colors.primary }]}>
+                  {loadingEventPhotos ? "..." : `${eventPhotos.length} Photos`}
+                </Text>
+              </View>
             </View>
 
             <Text style={[styles.eventHeroTitle, { color: theme.text }]}>
               {activeEvent.eventName}
             </Text>
 
-            <Text style={[styles.eventHeroSub, { color: theme.textSecondary }]}>
-              {language === "मराठी"
-                ? "या इव्हेंटमधील तुमचे फोटो शोधण्यासाठी चेहरा स्कॅन करा"
-                : language === "हिन्दी"
-                  ? "इस इवेंट में अपनी तस्वीरें खोजने के लिए फेस स्कैन करें"
-                  : "Scan your face to instantly find all your photos from this event"}
+            <Text style={[styles.eventStudioText, { color: theme.textSecondary, marginBottom: 8 }]}>
+              📍 {activeEvent.studioName || "Corporate Event"}
             </Text>
 
+            {/* EVENT PHOTOS PREVIEW STRIP */}
+            {eventPhotos.length > 0 && (
+              <View style={styles.eventPhotoPreviewContainer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.eventPhotoStrip}
+                >
+                  {eventPhotos.slice(0, 8).map((photo, pIdx) => (
+                    <TouchableOpacity
+                      key={photo.id || `thumb_${pIdx}`}
+                      activeOpacity={0.85}
+                      style={[styles.eventPhotoThumbWrap, { borderColor: theme.border }]}
+                      onPress={() => navigation.navigate("FaceMatchResults", {})}
+                    >
+                      <Image
+                        source={{ uri: photo.thumbnailUrl || photo.url }}
+                        style={styles.eventPhotoThumb}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  ))}
+                  {eventPhotos.length > 8 && (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={[
+                        styles.eventPhotoMoreWrap,
+                        { backgroundColor: `${colors.primary}18`, borderColor: colors.primary },
+                      ]}
+                      onPress={() => navigation.navigate("FaceMatchResults", {})}
+                    >
+                      <Text style={[styles.eventPhotoMoreText, { color: colors.primary }]}>
+                        +{eventPhotos.length - 8}
+                      </Text>
+                      <Text style={[styles.eventPhotoMoreSub, { color: colors.primary }]}>
+                        More
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            <Text style={[styles.eventHeroSub, { color: theme.textSecondary }]}>
+              {language === "मराठी"
+                ? "तुमचे वैयक्तिक फोटो AI द्वारे शोधण्यासाठी सेल्फी स्कॅन करा किंवा थेट सर्व फोटो पहा."
+                : language === "हिन्दी"
+                  ? "अपनी तस्वीरें AI से खोजने के लिए सेल्फी स्कैन करें या सीधे सभी फोटो देखें।"
+                  : "Scan your face for instant AI matching or browse all event photos directly."}
+            </Text>
+
+            {/* ACTION 1: AI FACE MATCH */}
             <TouchableOpacity
               activeOpacity={0.88}
               style={[styles.eventHeroButton, { backgroundColor: colors.primary }]}
               onPress={() => navigation.navigate("Main", { screen: "Camera" })}
             >
-              <Ionicons name="scan-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="sparkles" size={18} color="#FFFFFF" />
               <Text style={styles.eventHeroButtonText}>
                 {language === "मराठी"
-                  ? "चेहरा स्कॅन करून तुमचे फोटो मिळवा"
+                  ? "✨ AI द्वारे माझे फोटो शोधा (Scan Face)"
                   : language === "हिन्दी"
-                    ? "फेस स्कैन करके अपने फोटो पाएं"
-                    : "Scan Face to Unlock Your Photos"}
+                    ? "✨ AI से मेरे फोटो खोजें (Scan Face)"
+                    : "✨ Find My Photos with AI (Scan Face)"}
               </Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </TouchableOpacity>
 
-            <View
+            {/* ACTION 2: BROWSE ALL EVENT PHOTOS */}
+            <TouchableOpacity
+              activeOpacity={0.88}
               style={[
                 styles.eventBrowseAllButton,
                 {
-                  borderColor: theme.border,
-                  backgroundColor: theme.surfaceSoft || theme.surface,
+                  borderColor: colors.primary,
+                  backgroundColor: `${colors.primary}10`,
                 },
               ]}
+              onPress={() => navigation.navigate("FaceMatchResults", {})}
             >
-              <Ionicons name="shield-checkmark" size={16} color={colors.primary} />
-              <Text style={[styles.eventBrowseAllText, { color: theme.textSecondary, flex: 1 }]}>
+              <Ionicons name="images-outline" size={18} color={colors.primary} />
+              <Text style={[styles.eventBrowseAllText, { color: colors.primary }]}>
                 {language === "मराठी"
-                  ? "सुरक्षित AI प्रायव्हसी: तुमचे फोटो फक्त तुम्हालाच दिसतील"
+                  ? `🖼️ सर्व फोटो पहा (${eventPhotos.length}) - Browse All`
                   : language === "हिन्दी"
-                    ? "सुरक्षित AI प्राइवेसी: आपकी तस्वीरें केवल आपको दिखेंगी"
-                    : "Encrypted & Private: Only your matched photos will be visible"}
+                    ? `🖼️ सभी फोटो देखें (${eventPhotos.length}) - Browse All`
+                    : `🖼️ Browse All Event Photos (${eventPhotos.length})`}
               </Text>
-            </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
@@ -1417,5 +1501,52 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     flex: 1,
     marginLeft: 8,
+  },
+  eventPhotoCountBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  eventPhotoCountText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  eventPhotoPreviewContainer: {
+    marginVertical: 10,
+  },
+  eventPhotoStrip: {
+    flexDirection: "row",
+    gap: 8,
+    paddingVertical: 4,
+  },
+  eventPhotoThumbWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  eventPhotoThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  eventPhotoMoreWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventPhotoMoreText: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  eventPhotoMoreSub: {
+    fontSize: 10,
+    fontWeight: "600",
   },
 });
