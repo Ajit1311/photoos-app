@@ -12,6 +12,18 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCSglk_MkcIID1I_iQZlyNhTmb0Xh9VEjs",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "photoos-e7ae5.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "photoos-e7ae5",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "photoos-e7ae5.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "67532382291",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:67532382291:web:25309fa56b117d67e1a6a6",
+        "EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID": "G-37SGNW4Y7F",
+        "EXPO_PUBLIC_PHOTOOS_API_URL": "http://127.0.0.1:54321/functions/v1",
+        "EXPO_PUBLIC_SUPABASE_URL": "http://127.0.0.1:54321",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
       }
     },
     "production": {

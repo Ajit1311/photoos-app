@@ -7,16 +7,11 @@ import {
 } from "../storage/platform-storage";
 
 const supabaseUrl =
-  process.env.EXPO_PUBLIC_SUPABASE_URL;
+  process.env.EXPO_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
 
 const supabasePublishableKey =
-  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-if (!supabaseUrl || !supabasePublishableKey) {
-  throw new Error(
-    "Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-  );
-}
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH";
 
 export const supabase = createClient(
   supabaseUrl,
