@@ -29,6 +29,11 @@ import {
   type ClientAlbum,
   type ClientBooking,
 } from "../../services/client-app/client-app.service";
+import {
+  detectEventFromUrlOrDeepLink,
+  getActiveEventContextSync,
+  type ActiveEventContext,
+} from "../../services/event-gallery/event-qr-detector";
 
 const sponsoredAds = [
   {
@@ -75,7 +80,7 @@ const sponsoredAds = [
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { theme, t } = useAppSettings();
+  const { theme, t, language } = useAppSettings();
   const { width: windowWidth } = useWindowDimensions();
   const { user, photoosIdentity } = useAuth();
 
@@ -120,6 +125,18 @@ export default function HomeScreen() {
   const [lastBooking, setLastBooking] = useState<ClientBooking | null>(null);
   const [recentAlbum, setRecentAlbum] = useState<ClientAlbum | null>(null);
   const [homeDataLoading, setHomeDataLoading] = useState(true);
+  const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(
+    () => getActiveEventContextSync()
+  );
+
+  useEffect(() => {
+    void (async () => {
+      const detected = await detectEventFromUrlOrDeepLink();
+      if (detected) {
+        setActiveEvent(detected);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -278,6 +295,105 @@ export default function HomeScreen() {
             {userName}
           </Text>
         </View>
+
+        {/* ------------------------------------------------------------ */}
+        {/* ACTIVE EVENT HERO CARD */}
+        {/* ------------------------------------------------------------ */}
+        {activeEvent ? (
+          <View
+            style={[
+              styles.eventHeroCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+          >
+            <View style={styles.eventHeroBadgeRow}>
+              <View style={styles.eventLiveBadge}>
+                <View style={styles.eventLiveDot} />
+                <Text style={styles.eventLiveText}>EVENT GALLERY ACTIVE</Text>
+              </View>
+              <Text style={[styles.eventStudioText, { color: theme.textSecondary }]}>
+                {activeEvent.studioName || "Photo Studio"}
+              </Text>
+            </View>
+
+            <Text style={[styles.eventHeroTitle, { color: theme.text }]}>
+              {activeEvent.eventName}
+            </Text>
+
+            <Text style={[styles.eventHeroSub, { color: theme.textSecondary }]}>
+              {language === "मराठी"
+                ? "या इव्हेंटमधील तुमचे फोटो शोधण्यासाठी चेहरा स्कॅन करा"
+                : language === "हिन्दी"
+                  ? "इस इवेंट में अपनी तस्वीरें खोजने के लिए फेस स्कैन करें"
+                  : "Scan your face to instantly find all your photos from this event"}
+            </Text>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={[styles.eventHeroButton, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+            >
+              <Ionicons name="scan-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.eventHeroButtonText}>
+                {language === "मराठी"
+                  ? "चेहरा स्कॅन करून फोटो शोधा"
+                  : language === "हिन्दी"
+                    ? "फेस स्कैन से फोटो खोजें"
+                    : "Scan Face to Find Photos"}
+              </Text>
+              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={[
+              styles.eventHeroCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+            onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+          >
+            <View style={styles.eventHeroBadgeRow}>
+              <View style={[styles.eventLiveBadge, { backgroundColor: `${colors.teal}18` }]}>
+                <Ionicons name="sparkles" size={12} color={colors.teal} />
+                <Text style={[styles.eventLiveText, { color: colors.teal }]}>AI FACE MATCH</Text>
+              </View>
+              <Text style={[styles.eventStudioText, { color: theme.textSecondary }]}>
+                Instant Discovery
+              </Text>
+            </View>
+
+            <Text style={[styles.eventHeroTitle, { color: theme.text }]}>
+              Find Your Photos by Face
+            </Text>
+
+            <Text style={[styles.eventHeroSub, { color: theme.textSecondary }]}>
+              {language === "मराठी"
+                ? "सेल्फी घ्या किंवा फोटो अपलोड करा आणि इव्हेंटमधील तुमचे सर्व फोटो त्वरित मिळवा"
+                : language === "हिन्दी"
+                  ? "सेल्फी लें या फोटो अपलोड करें और इवेंट की अपनी सभी तस्वीरें तुरंत पाएं"
+                  : "Take a selfie or upload a photo to discover all your shots with 99.4% AI accuracy"}
+            </Text>
+
+            <View style={[styles.eventHeroButton, { backgroundColor: colors.primary }]}>
+              <Ionicons name="camera" size={18} color="#FFFFFF" />
+              <Text style={styles.eventHeroButtonText}>
+                {language === "मराठी"
+                  ? "सेल्फी स्कॅन सुरू करा"
+                  : language === "हिन्दी"
+                    ? "सेल्फी स्कैन शुरू करें"
+                    : "Start Face Search"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* ------------------------------------------------------------ */}
         {/* APPLE SEARCH BAR */}
@@ -1197,5 +1313,74 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 16,
     marginTop: 2,
+  },
+
+  /* ACTIVE EVENT HERO CARD */
+  eventHeroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  eventHeroBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  eventLiveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(52, 199, 89, 0.15)",
+  },
+  eventLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#34C759",
+  },
+  eventLiveText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#34C759",
+    letterSpacing: 0.4,
+  },
+  eventStudioText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  eventHeroTitle: {
+    fontSize: 19,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+    marginBottom: 4,
+  },
+  eventHeroSub: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  eventHeroButton: {
+    height: 48,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  eventHeroButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

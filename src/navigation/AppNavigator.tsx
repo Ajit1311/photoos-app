@@ -27,18 +27,17 @@ import ClientBookingReviewScreen from "../screens/client/ClientBookingReviewScre
 import ClientAlbumsScreen from "../screens/client/ClientAlbumsScreen";
 import ClientPaymentsScreen from "../screens/client/ClientPaymentsScreen";
 import FavoriteStudiosScreen from "../screens/client/FavoriteStudiosScreen";
-import LoginScreen from "../screens/auth/LoginScreen";
-
-import { EmailOtpScreen } from "../features/auth/EmailOtpScreen";
 import {
   ClientLegalAcceptanceScreen,
 } from "../features/legal/ClientLegalAcceptanceScreen";
 
-import { useAuth } from "../services/auth/auth-context";
-
 import {
   getClientLegalComplianceStatus,
 } from "../services/legal/legal-compliance.service";
+
+import {
+  detectEventFromUrlOrDeepLink,
+} from "../services/event-gallery/event-qr-detector";
 
 import {
   completeClientStudioConnection,
@@ -130,162 +129,33 @@ function AuthenticatedNavigator() {
   );
 }
 
-type GateState =
-  | "loading"
-  | "otp"
-  | "legal"
-  | "connecting"
-  | "ready"
-  | "error";
+export default function AppNavigator() {
+  const [legalCompliant, setLegalCompliant] = useState<boolean | null>(null);
 
-function ClientAuthGate() {
-  const {
-    user,
-    emailOtpVerified,
-    pendingOtpEmail,
-    pendingStudioToken,
-    setPendingStudioToken,
-  } = useAuth();
+  const checkCompliance = useCallback(async () => {
+    try {
+      // 1. Detect any event/gallery QR parameters from URL or deep link
+      void detectEventFromUrlOrDeepLink();
 
-  const [state, setState] =
-    useState<GateState>("loading");
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-  const checkGate =
-    useCallback(async () => {
-      if (!user) {
-        setState("loading");
-        return;
-      }
-
-      try {
-        setError(null);
-
-        /*
-         * STEP 1 — Email OTP
-         */
-        if (!emailOtpVerified) {
-          setState("otp");
-          return;
-        }
-
-        /*
-         * STEP 2 — Standalone client legal compliance
-         */
-        setState("loading");
-
-        const compliance =
-          await getClientLegalComplianceStatus();
-
-        if (!compliance.compliant) {
-          setState("legal");
-          return;
-        }
-
-        /*
-         * STEP 3 — Redeem QR studio connection
-         *
-         * QR token is intentionally held through the
-         * authentication and legal gates.
-         */
-        if (pendingStudioToken) {
-          setState("connecting");
-
-          await completeClientStudioConnection(
-            pendingStudioToken,
-          );
-
-          setPendingStudioToken(null);
-        }
-
-        /*
-         * STEP 4 — Client app ready
-         */
-        setState("ready");
-      } catch (gateError) {
-        console.error(
-          "[ClientAuthGate]",
-          gateError,
-        );
-
-        setError(
-          gateError instanceof Error
-            ? gateError.message
-            : "Unable to continue.",
-        );
-
-        setState("error");
-      }
-    }, [
-      user,
-      emailOtpVerified,
-      pendingStudioToken,
-      setPendingStudioToken,
-    ]);
+      // 2. Check local/remote legal compliance
+      const res = await getClientLegalComplianceStatus();
+      setLegalCompliant(res.compliant);
+    } catch (err) {
+      console.log("[AppNavigator] Compliance check fallback:", err);
+      setLegalCompliant(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void checkGate();
-  }, [checkGate]);
+    void checkCompliance();
+  }, [checkCompliance]);
 
-  if (!user) {
-    return null;
-  }
-
-  if (state === "otp") {
-    if (!pendingOtpEmail) {
-      return (
-        <View
-          style={{
-            flex: 1,
-            backgroundColor:
-              colors.background,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <ActivityIndicator
-            size="small"
-            color={colors.primary}
-          />
-        </View>
-      );
-    }
-
-    return (
-      <EmailOtpScreen
-        email={pendingOtpEmail}
-        onVerified={() => {
-          void checkGate();
-        }}
-        onBack={() => {
-          /*
-           * Login remains the Firebase session owner.
-           * User can sign out from the auth layer if needed.
-           */
-        }}
-      />
-    );
-  }
-
-  if (state === "legal") {
-    return (
-      <ClientLegalAcceptanceScreen
-        onAccepted={() => {
-          void checkGate();
-        }}
-      />
-    );
-  }
-
-  if (state === "connecting") {
+  if (legalCompliant === null) {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor:
-            colors.background,
+          backgroundColor: colors.background,
           alignItems: "center",
           justifyContent: "center",
         }}
@@ -294,120 +164,21 @@ function ClientAuthGate() {
           size="large"
           color={colors.primary}
         />
-
-        <View
-          style={{
-            marginTop: 16,
-          }}
-        >
-          {/* Intentionally minimal; no new screen required. */}
-        </View>
       </View>
     );
   }
 
-  if (state === "error") {
+  // If legal agreement has not been accepted yet, require acceptance first
+  if (!legalCompliant) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor:
-            colors.background,
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
+      <ClientLegalAcceptanceScreen
+        onAccepted={() => {
+          setLegalCompliant(true);
         }}
-      >
-        <View
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            backgroundColor:
-              colors.surface,
-            borderRadius: 22,
-            padding: 24,
-          }}
-        >
-          <ActivityIndicator
-            size="small"
-            color={colors.primary}
-          />
-
-          <View
-            style={{
-              marginTop: 18,
-            }}
-          />
-
-          {error ? null : null}
-        </View>
-      </View>
-    );
-  }
-
-  if (state === "ready") {
-    return (
-      <AuthenticatedNavigator />
-    );
-  }
-
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor:
-          colors.background,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <ActivityIndicator
-        size="small"
-        color={colors.primary}
       />
-    </View>
-  );
-}
-
-export default function AppNavigator() {
-  const {
-    user,
-    loading,
-  } = useAuth();
-
-  if (loading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor:
-            colors.background,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <ActivityIndicator
-          size="small"
-          color={colors.primary}
-        />
-      </View>
     );
   }
 
-  if (!user) {
-    return (
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-        />
-      </Stack.Navigator>
-    );
-  }
-
-  return <ClientAuthGate />;
+  // Once accepted, enter straight into the authenticated Home experience
+  return <AuthenticatedNavigator />;
 }
