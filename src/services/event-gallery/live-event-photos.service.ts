@@ -43,6 +43,19 @@ function normalizeMediaUrl(url: string | undefined): string {
   if (url.startsWith("/")) {
     return `${BACKEND_BASE_URL}${url}`;
   }
+  if (url.includes("127.0.0.1:3000") || url.includes("localhost:3000")) {
+    return url.replace(/https?:\/\/(127\.0\.0\.1|localhost):3000/, BACKEND_BASE_URL);
+  }
+  if (url.includes("127.0.0.1") || url.includes("localhost")) {
+    const match = url.match(/\/object\/(?:sign|public)\/([^/]+)\/([^?]+)/);
+    if (match && match[1] && match[2]) {
+      return `${BACKEND_BASE_URL}/api/storage/file?bucket=${encodeURIComponent(match[1])}&path=${encodeURIComponent(match[2])}`;
+    }
+    const simpleMatch = url.match(/\/object\/(?:sign|public)\/([^?]+)/);
+    if (simpleMatch && simpleMatch[1]) {
+      return `${BACKEND_BASE_URL}/api/storage/file?path=${encodeURIComponent(simpleMatch[1])}`;
+    }
+  }
   return url;
 }
 

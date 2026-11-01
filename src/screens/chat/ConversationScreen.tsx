@@ -23,6 +23,7 @@ import {
 } from "@react-navigation/native";
 
 import { colors } from "../../theme/colors";
+import { supabase } from "../../config/supabase";
 import {
   getClientMarketplaceMessages,
   sendClientMarketplaceMessage,
@@ -167,6 +168,7 @@ export default function ConversationScreen() {
   const [activeImageForNote, setActiveImageForNote] = useState<{ id: string; url: string; fileName?: string } | null>(null);
   const [reviewNoteText, setReviewNoteText] = useState("");
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+  const [isStudioOnline, setIsStudioOnline] = useState(false);
 
   const loadMessages = useCallback(
     async (id: string) => {
@@ -297,6 +299,35 @@ export default function ConversationScreen() {
       clearInterval(interval);
     };
   }, [conversationId, loadMessages]);
+
+  /*
+   * Supabase Realtime Presence Channel
+   * Connects client presence with studio dashboard to track live online/delivered/read status
+   */
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const channel = supabase.channel(`presence-chat-${conversationId}`, {
+      config: { presence: { key: `client_${Date.now()}` } },
+    });
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState();
+        const keys = Object.keys(state);
+        const hasStudio = keys.some((k) => !k.startsWith("client_"));
+        setIsStudioOnline(hasStudio || keys.length > 1);
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ is_client: true, online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
 
   const addEmoji = (emoji: string) => {
     setText((current) => `${current}${emoji}`);
@@ -724,9 +755,9 @@ export default function ConversationScreen() {
             </Text>
 
             <View style={styles.onlineStatusRow}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.onlineStatusText}>
-                online • एंड-टू-एंड एनक्रिप्टेड
+              <View style={[styles.onlineDot, !isStudioOnline && { backgroundColor: isDark ? "#8696a0" : "#8c9ca5" }]} />
+              <Text style={[styles.onlineStatusText, !isStudioOnline && { color: isDark ? "#8696a0" : "#667781" }]}>
+                {isStudioOnline ? "online" : "offline"} • एंड-टू-एंड एनक्रिप्टेड
               </Text>
             </View>
           </View>
@@ -1003,7 +1034,48 @@ export default function ConversationScreen() {
                           : ""}
                       </Text>
                       {isMine && !isDeleted && (
-                        <Ionicons name="checkmark-done" size={15} color="#53bdeb" style={{ marginLeft: 3 }} />
+                        (() => {
+                          const hasLaterStudioReply = messages.some(
+                            (m) =>
+                              !m.isMine &&
+                              m.createdAt &&
+                              message.createdAt &&
+                              new Date(m.createdAt).getTime() > new Date(message.createdAt).getTime()
+                          );
+
+                          const isRead = hasLaterStudioReply;
+
+                          if (isRead) {
+                            return (
+                              <Ionicons
+                                name="checkmark-done"
+                                size={15}
+                                color="#53bdeb"
+                                style={{ marginLeft: 3 }}
+                              />
+                            );
+                          }
+
+                          if (isStudioOnline) {
+                            return (
+                              <Ionicons
+                                name="checkmark-done"
+                                size={15}
+                                color={isDark ? "#8696a0" : "#8c9ca5"}
+                                style={{ marginLeft: 3 }}
+                              />
+                            );
+                          }
+
+                          return (
+                            <Ionicons
+                              name="checkmark"
+                              size={14}
+                              color={isDark ? "#8696a0" : "#8c9ca5"}
+                              style={{ marginLeft: 3 }}
+                            />
+                          );
+                        })()
                       )}
                     </View>
                   </TouchableOpacity>

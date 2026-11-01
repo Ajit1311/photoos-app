@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -99,6 +99,26 @@ export default function ChatScreen() {
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(null);
+
+  // Strict Event & Studio Scoping:
+  // When a guest scans an event QR code, they must ONLY see the chat for that event and studio.
+  // Other events of this studio or other studios are strictly isolated and never shown.
+  const displayedChats = useMemo(() => {
+    if (!activeEvent) return chats;
+    return chats.filter((c) => {
+      const sId = activeEvent.studioId?.toLowerCase();
+      const eId = activeEvent.eventId?.toLowerCase();
+      const sName = activeEvent.studioName?.toLowerCase();
+      const cTitle = c.title.toLowerCase();
+      const cId = c.conversationId.toLowerCase();
+
+      return (
+        (sId && cId.includes(sId)) ||
+        (eId && cId.includes(eId)) ||
+        (sName && cTitle.includes(sName))
+      );
+    });
+  }, [chats, activeEvent]);
 
   const title =
     language === "मराठी"
@@ -222,10 +242,10 @@ export default function ChatScreen() {
         </View>
       ) : (
         <FlatList
-          data={chats}
+          data={displayedChats}
           keyExtractor={(item) => item.id}
           contentContainerStyle={
-            chats.length === 0 ? styles.emptyList : styles.list
+            displayedChats.length === 0 ? styles.emptyList : styles.list
           }
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={

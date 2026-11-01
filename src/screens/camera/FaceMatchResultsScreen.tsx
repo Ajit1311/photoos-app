@@ -44,6 +44,77 @@ export interface DisplayPhoto extends LiveEventPhoto {
   isMatch?: boolean;
 }
 
+interface PhotoThumbnailItemProps {
+  photo: DisplayPhoto;
+  theme: any;
+  onSelect: () => void;
+  onDownload: () => void;
+}
+
+function PhotoThumbnailItem({
+  photo,
+  theme,
+  onSelect,
+  onDownload,
+}: PhotoThumbnailItemProps) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  const primaryUri = photo.thumbnailUrl || photo.url;
+  const secondaryUri = photo.url || photo.thumbnailUrl;
+  const currentUri = !loadFailed ? primaryUri : secondaryUri;
+
+  return (
+    <TouchableOpacity
+      style={[styles.photoCard, { borderColor: theme.border, backgroundColor: theme.surface }]}
+      activeOpacity={0.9}
+      onPress={onSelect}
+    >
+      <View style={styles.photoImageContainer}>
+        {!isLoaded && (
+          <View style={[styles.photoImageLoader, { backgroundColor: `${theme.primary}12` }]}>
+            <ActivityIndicator size="small" color={theme.primary} />
+          </View>
+        )}
+        <Image
+          source={{ uri: currentUri }}
+          style={styles.photoImage}
+          resizeMode="cover"
+          onLoad={() => setIsLoaded(true)}
+          onError={() => {
+            if (!loadFailed && primaryUri !== secondaryUri) {
+              setLoadFailed(true);
+            }
+          }}
+        />
+      </View>
+
+      {/* CONFIDENCE PILL (99%+ accuracy) */}
+      {photo.confidence ? (
+        <View style={styles.photoConfidenceBadge}>
+          <Ionicons name="shield-checkmark" size={10} color="#34C759" />
+          <Text style={styles.photoConfidenceText}>
+            {photo.confidence}% Match
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.photoFooter}>
+        <Text style={[styles.photoCategory, { color: theme.text }]} numberOfLines={1}>
+          {photo.name || "Event Photo"}
+        </Text>
+
+        <TouchableOpacity
+          style={styles.photoQuickDownload}
+          onPress={onDownload}
+        >
+          <Ionicons name="download-outline" size={18} color={theme.primary} />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function FaceMatchResultsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -575,41 +646,13 @@ export default function FaceMatchResultsScreen() {
           {/* PHOTO GRID */}
           <View style={styles.photoGrid}>
             {displayedPhotos.map((photo) => (
-              <TouchableOpacity
+              <PhotoThumbnailItem
                 key={photo.id}
-                style={[styles.photoCard, { borderColor: theme.border, backgroundColor: theme.surface }]}
-                activeOpacity={0.9}
-                onPress={() => setSelectedPhoto(photo)}
-              >
-                <Image
-                  source={{ uri: photo.thumbnailUrl || photo.url }}
-                  style={styles.photoImage}
-                  resizeMode="cover"
-                />
-
-                {/* CONFIDENCE PILL (99%+ accuracy) */}
-                {photo.confidence ? (
-                  <View style={styles.photoConfidenceBadge}>
-                    <Ionicons name="shield-checkmark" size={10} color="#34C759" />
-                    <Text style={styles.photoConfidenceText}>
-                      {photo.confidence}% Match
-                    </Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.photoFooter}>
-                  <Text style={[styles.photoCategory, { color: theme.text }]} numberOfLines={1}>
-                    {photo.name || "Event Photo"}
-                  </Text>
-
-                  <TouchableOpacity
-                    style={styles.photoQuickDownload}
-                    onPress={() => handleDownloadSingle(photo)}
-                  >
-                    <Ionicons name="download-outline" size={18} color={theme.primary} />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
+                photo={photo}
+                theme={theme}
+                onSelect={() => setSelectedPhoto(photo)}
+                onDownload={() => handleDownloadSingle(photo)}
+              />
             ))}
           </View>
         </ScrollView>
@@ -845,6 +888,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  photoImageContainer: {
+    width: "100%",
+    height: 180,
+    position: "relative",
+  },
+  photoImageLoader: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
   },
   photoImage: {
     width: "100%",
