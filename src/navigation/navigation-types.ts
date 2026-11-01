@@ -54,6 +54,8 @@ export type RootStackParamList = {
   Conversation: {
     conversationId?: string;
     title?: string;
+    studioId?: string;
+    studioName?: string;
   };
 
   Language: undefined;

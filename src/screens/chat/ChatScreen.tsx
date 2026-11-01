@@ -16,6 +16,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../navigation/navigation-types";
 import { useAppSettings } from "../../context/AppSettingsContext";
 import { getClientMarketplaceChats } from "../../services/client-app/client-app.service";
+import {
+  detectEventFromUrlOrDeepLink,
+  type ActiveEventContext,
+} from "../../services/event-gallery/event-qr-detector";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -94,6 +98,7 @@ export default function ChatScreen() {
 
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(null);
 
   const title =
     language === "मराठी"
@@ -101,6 +106,15 @@ export default function ChatScreen() {
       : language === "हिन्दी"
         ? "संदेश"
         : "Messages";
+
+  const loadActiveEvent = useCallback(async () => {
+    try {
+      const detected = await detectEventFromUrlOrDeepLink();
+      setActiveEvent(detected);
+    } catch {
+      setActiveEvent(null);
+    }
+  }, []);
 
   const loadChats = useCallback(async () => {
     try {
@@ -122,7 +136,8 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       loadChats();
-    }, [loadChats])
+      loadActiveEvent();
+    }, [loadChats, loadActiveEvent])
   );
 
   const openConversation = (chat: ChatItem) => {
@@ -213,6 +228,56 @@ export default function ChatScreen() {
             chats.length === 0 ? styles.emptyList : styles.list
           }
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            activeEvent ? (
+              <TouchableOpacity
+                activeOpacity={0.88}
+                onPress={() =>
+                  navigation.navigate("Conversation", {
+                    studioId: activeEvent.studioId || activeEvent.eventId,
+                    studioName:
+                      activeEvent.studioName ||
+                      (activeEvent.type === "corporate" ? "Corporate Office" : "Photo Studio"),
+                    title: activeEvent.studioName || activeEvent.eventName,
+                  })
+                }
+                style={[
+                  styles.activeEventCard,
+                  {
+                    backgroundColor: "#00a88414",
+                    borderColor: "#00a88440",
+                  },
+                ]}
+              >
+                <View style={styles.activeEventIconBox}>
+                  <Ionicons name="chatbubbles" size={22} color="#00a884" />
+                </View>
+
+                <View style={styles.activeEventInfo}>
+                  <View style={styles.activeEventPill}>
+                    <View style={styles.activeEventDot} />
+                    <Text style={styles.activeEventPillText}>
+                      {language === "मराठी" ? "स्कॅन केलेला इव्हेंट" : language === "हिन्दी" ? "स्कैन किया गया इवेंट" : "ACTIVE SCANNED EVENT"}
+                    </Text>
+                  </View>
+
+                  <Text numberOfLines={1} style={[styles.activeEventTitle, { color: theme.text }]}>
+                    {activeEvent.studioName || activeEvent.eventName}
+                  </Text>
+
+                  <Text numberOfLines={1} style={[styles.activeEventSub, { color: theme.textSecondary }]}>
+                    {language === "मराठी"
+                      ? "💬 फोटोग्राफरशी थेट चॅट करा (WhatsApp Chat)"
+                      : language === "हिन्दी"
+                        ? "💬 फोटोग्राफर से सीधे चैट करें (WhatsApp Chat)"
+                        : "💬 Chat directly with photographer (WhatsApp)"}
+                  </Text>
+                </View>
+
+                <Ionicons name="chevron-forward" size={18} color="#00a884" />
+              </TouchableOpacity>
+            ) : null
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               activeOpacity={0.78}
@@ -549,5 +614,69 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+
+  activeEventCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginBottom: 14,
+    shadowColor: "#00a884",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+
+  activeEventIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#00a88422",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  activeEventInfo: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+
+  activeEventPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#00a88420",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+
+  activeEventDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#00a884",
+    marginRight: 5,
+  },
+
+  activeEventPillText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#00a884",
+    letterSpacing: 0.5,
+  },
+
+  activeEventTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  activeEventSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });

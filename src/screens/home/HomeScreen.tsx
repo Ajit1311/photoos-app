@@ -451,6 +451,38 @@ export default function HomeScreen() {
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.primary} />
             </TouchableOpacity>
+
+            {/* ACTION 3: DIRECT CHAT WITH STUDIO (WHATSAPP-CONNECTED) */}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={[
+                styles.eventBrowseAllButton,
+                {
+                  borderColor: "#00a884",
+                  backgroundColor: "#00a88415",
+                  marginTop: 8,
+                },
+              ]}
+              onPress={() =>
+                navigation.navigate("Conversation", {
+                  studioId: activeEvent.studioId || activeEvent.eventId,
+                  studioName:
+                    activeEvent.studioName ||
+                    (activeEvent.type === "corporate" ? "Corporate Office" : "Photo Studio"),
+                  title: activeEvent.studioName || activeEvent.eventName,
+                })
+              }
+            >
+              <Ionicons name="chatbubbles" size={18} color="#00a884" />
+              <Text style={[styles.eventBrowseAllText, { color: "#00a884" }]}>
+                {language === "मराठी"
+                  ? "💬 स्टुडिओशी थेट चॅट करा (Chat with Studio)"
+                  : language === "हिन्दी"
+                    ? "💬 स्टूडियो से सीधे चैट करें (Chat with Studio)"
+                    : "💬 Chat Directly with Studio"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#00a884" />
+            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity

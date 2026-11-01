@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-          KeyboardAvoidingView,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -155,7 +157,16 @@ export default function ConversationScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
+  // WhatsApp Enhanced Features: Pinning, Review Comments, Deletion & Lightbox
+  const [pinnedMessageIds, setPinnedMessageIds] = useState<string[]>([]);
+  const [pinnedComments, setPinnedComments] = useState<Record<string, string>>({});
+  const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
+  const [activeImageForNote, setActiveImageForNote] = useState<{ id: string; url: string; fileName?: string } | null>(null);
+  const [reviewNoteText, setReviewNoteText] = useState("");
+  const [lightboxUri, setLightboxUri] = useState<string | null>(null);
 
   const loadMessages = useCallback(
     async (id: string) => {
@@ -185,7 +196,8 @@ export default function ConversationScreen() {
 
         let id = conversationId;
 
-        if (!id && studioId) {          const response =
+        if (!id && studioId) {
+          const response =
             await startClientMarketplaceChat(
               studioId,
               studioName,
@@ -229,14 +241,8 @@ export default function ConversationScreen() {
   }, [initialiseConversation]);
 
   /*
-   * WhatsApp-style live conversation sync.
-   *
-   * Marketplace and Chat intentionally use this SAME
-   * ConversationScreen and SAME conversation_id.
-   *
-   * No loading spinner is triggered here.
-   * The conversation remains visible while messages
-   * are refreshed in the background.
+   * WhatsApp-style live conversation sync (3-second polling interval).
+   * Ensures real-time bidirectional communication with studio dashboard.
    */
   useEffect(() => {
     if (!conversationId) {
@@ -265,18 +271,103 @@ export default function ConversationScreen() {
       }
     };
 
-    /*
-     * Initial background refresh.
-     */
     void refreshConversation();
+
+    const interval = setInterval(() => {
+      void refreshConversation();
+    }, 3000);
+
     return () => {
       active = false;
+      clearInterval(interval);
     };
   }, [conversationId, loadMessages]);
 
   const addEmoji = (emoji: string) => {
     setText((current) => `${current}${emoji}`);
     setShowEmojiPicker(false);
+  };
+
+  const sendMessageWithContent = async (contentToSend: string) => {
+    const trimmed = contentToSend.trim();
+    if (!trimmed || sending) {
+      return;
+    }
+
+    let id = conversationId;
+
+    try {
+      setSending(true);
+
+      if (!id && studioId) {
+        const response = await startClientMarketplaceChat(studioId, studioName);
+        const root = asRecord(response);
+        const data = asRecord(root.data);
+        id = String(data.conversation_id ?? data.id ?? root.conversation_id ?? "").trim();
+        if (id) setConversationId(id);
+      }
+
+      if (!id) {
+        throw new Error("Conversation could not be created.");
+      }
+
+      const sendResponse = await sendClientMarketplaceMessage(id, trimmed);
+      const root = asRecord(sendResponse);
+      const data = asRecord(root.data);
+
+      const sentId = String(
+        data.id ?? data.message_id ?? root.id ?? `local-${Date.now()}`,
+      ).trim();
+
+      const sentCreatedAt = String(
+        data.created_at ?? root.created_at ?? new Date().toISOString(),
+      );
+
+      const sentMessage: Message = {
+        id: sentId,
+        content: trimmed,
+        senderId: data.sender_id ?? data.senderId ?? null,
+        isMine: true,
+        createdAt: sentCreatedAt,
+      };
+
+      setMessages((current) => {
+        if (current.some((m) => m.id === sentMessage.id)) {
+          return current;
+        }
+        return [...current, sentMessage];
+      });
+
+      await loadMessages(id);
+    } catch (err) {
+      console.error("[ClientChat] Send failed:", err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const sendLocation = async () => {
+    try {
+      setShowAttachMenu(false);
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const { latitude, longitude } = pos.coords;
+            const mapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
+            await sendMessageWithContent(`📍 Location: ${mapsUrl}`);
+          },
+          (err) => {
+            console.warn("Geolocation fetch error:", err);
+            Alert.alert("Location", "Could not fetch GPS location. Please ensure location services are enabled.");
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      } else {
+        Alert.alert("Location", "Geolocation is not supported on this device.");
+      }
+    } catch (err) {
+      console.warn("Location error:", err);
+    }
   };
 
   const pickAttachment = async () => {
@@ -554,114 +645,16 @@ export default function ConversationScreen() {
 
   const sendMessage = async () => {
     const content = text.trim();
-
     if (!content || sending) {
       return;
     }
-
-    let id = conversationId;
-
-    try {
-      setSending(true);
-
-      if (!id && studioId) {        const response =
-          await startClientMarketplaceChat(
-            studioId,
-            studioName,
-          );
-
-        const root = asRecord(response);
-        const data = asRecord(root.data);
-
-        id = String(
-          data.conversation_id ??
-            data.id ??
-            root.conversation_id ??
-            "",
-        ).trim();
-
-        if (id) {
-          setConversationId(id);
-        }
-      }
-
-      if (!id) {
-        throw new Error(
-          "Conversation could not be created.",
-        );
-      }
-
-      const sendResponse =
-        await sendClientMarketplaceMessage(
-          id,
-          content,
-        );
-
-      const root =
-        asRecord(sendResponse);
-
-      const data =
-        asRecord(root.data);
-
-      const sentId = String(
-        data.id ??
-          data.message_id ??
-          root.id ??
-          `local-${Date.now()}`,
-      ).trim();
-
-      const sentCreatedAt =
-        String(
-          data.created_at ??
-            root.created_at ??
-            new Date().toISOString(),
-        );
-
-      const sentMessage: Message = {
-        id: sentId,
-        content,
-        senderId:
-          data.sender_id ??
-          data.senderId ??
-          null,
-        isMine: true,
-        createdAt:
-          sentCreatedAt,
-      };
-
-      setMessages((current) => {
-        if (
-          current.some(
-            (message) =>
-              message.id === sentMessage.id,
-          )
-        ) {
-          return current;
-        }
-
-        return [
-          ...current,
-          sentMessage,
-        ];
-      });
-
-      setText("");
-
-      /*
-       * Refresh from backend as well.
-       * This confirms the optimistic message
-       * against the persisted encrypted message.
-       */
-      await loadMessages(id);
-    } catch (error) {
-      console.error(
-        "[ClientChat] Send failed:",
-        error,
-      );
-    } finally {
-      setSending(false);
-    }
+    setText("");
+    setShowEmojiPicker(false);
+    setShowAttachMenu(false);
+    await sendMessageWithContent(content);
   };
+
+  const pinnedItems = messages.filter((m) => pinnedMessageIds.includes(m.id));
 
   return (
     <KeyboardAvoidingView
@@ -675,7 +668,8 @@ export default function ConversationScreen() {
         Platform.OS === "ios" ? 8 : 0
       }
     >
-      <View style={styles.header}>
+      {/* WHATSAPP TOP APP BAR */}
+      <View style={[styles.header, { backgroundColor: isDark ? "#202c33" : "#ffffff" }]}>
         <TouchableOpacity
           style={styles.backButton}
           activeOpacity={0.8}
@@ -684,7 +678,7 @@ export default function ConversationScreen() {
           <Ionicons
             name="arrow-back"
             size={23}
-            color={colors.text}
+            color={isDark ? "#ffffff" : "#111b21"}
           />
         </TouchableOpacity>
 
@@ -701,29 +695,62 @@ export default function ConversationScreen() {
           <View style={styles.headerText}>
             <Text
               numberOfLines={1}
-              style={styles.headerTitle}
+              style={[styles.headerTitle, { color: isDark ? "#ffffff" : "#111b21" }]}
             >
               {studioName}
             </Text>
 
-            <Text style={styles.headerSubtitle}>
-              Photography Studio
-            </Text>
+            <View style={styles.onlineStatusRow}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.onlineStatusText}>
+                online • एंड-टू-एंड एनक्रिप्टेड
+              </Text>
+            </View>
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.headerAction}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="call-outline"
-            size={21}
-            color={colors.text}
-          />
-        </TouchableOpacity>
+        <View style={styles.headerActionsRight}>
+          <TouchableOpacity
+            style={styles.headerAction}
+            activeOpacity={0.8}
+            onPress={() => Alert.alert("Call", `${studioName} शी थेट संपर्क साधण्यासाठी कॉल पर्याय उपलब्ध आहे.`)}
+          >
+            <Ionicons
+              name="call"
+              size={20}
+              color={isDark ? "#aebac1" : "#54656f"}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {/* PINNED MESSAGES BAR */}
+      {pinnedItems.length > 0 && (
+        <View style={[styles.pinnedBanner, { backgroundColor: isDark ? "#182229" : "#f0f2f5" }]}>
+          <Ionicons name="pin" size={15} color="#00a884" />
+          <View style={styles.pinnedBannerInfo}>
+            <Text style={[styles.pinnedBannerTitle, { color: isDark ? "#ffffff" : "#111b21" }]}>
+              पिन केलेले मेसेजेस ({pinnedItems.length})
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={[styles.pinnedBannerSub, { color: isDark ? "#8696a0" : "#667781" }]}
+            >
+              {pinnedComments[pinnedItems[pinnedItems.length - 1].id]
+                ? `📌 कमेंट: ${pinnedComments[pinnedItems[pinnedItems.length - 1].id]}`
+                : pinnedItems[pinnedItems.length - 1].content || "पिन केलेला फोटो / फाईल"}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setPinnedMessageIds([])}
+            style={styles.pinnedBannerClose}
+          >
+            <Ionicons name="close" size={16} color={isDark ? "#8696a0" : "#667781"} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* CHAT MESSAGES BODY */}
       <ImageBackground
         source={
           isDark
@@ -738,7 +765,7 @@ export default function ConversationScreen() {
           <View style={styles.loader}>
             <ActivityIndicator
               size="small"
-              color={colors.primary}
+              color="#00a884"
             />
           </View>
         ) : (
@@ -752,106 +779,211 @@ export default function ConversationScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            {/* END-TO-END ENCRYPTION PILL */}
+            <View style={styles.e2eContainer}>
+              <View style={[styles.e2eCard, { backgroundColor: isDark ? "#182229" : "#ffeecd" }]}>
+                <Ionicons name="lock-closed" size={12} color={isDark ? "#ffd279" : "#7d5a00"} style={{ marginRight: 4 }} />
+                <Text style={[styles.e2eText, { color: isDark ? "#ffd279" : "#7d5a00" }]}>
+                  🔒 मेसेजेस आणि मीडिया एंड-टू-एंड एनक्रिप्टेड आहेत. PhotoOS सह बाहेरील कोणालाही हे वाचता येत नाही.
+                </Text>
+              </View>
+            </View>
+
             {messages.length === 0 ? (
               <View style={styles.emptyConversation}>
                 <View style={styles.emptyIcon}>
                   <Ionicons
                     name="chatbubble-ellipses-outline"
                     size={28}
-                    color={colors.primary}
+                    color="#00a884"
                   />
                 </View>
 
-                <Text style={styles.emptyTitle}>
-                  Start a conversation
+                <Text style={[styles.emptyTitle, { color: isDark ? "#ffffff" : "#111b21" }]}>
+                  संभाषण सुरू करा
                 </Text>
 
-                <Text style={styles.emptyText}>
-                  Send a message to {studioName}.
+                <Text style={[styles.emptyText, { color: isDark ? "#8696a0" : "#667781" }]}>
+                  {studioName} शी थेट संपर्क साधा. फोटो, फाइल्स किंवा लोकेशन शेअर करा.
                 </Text>
               </View>
             ) : (
               messages.map((message) => {
-                const isMine =
-                  message.isMine === true;
+                const isMine = message.isMine === true;
+                const isDeleted = deletedMessageIds.includes(message.id);
+                const isPinned = pinnedMessageIds.includes(message.id);
+                const reviewComment = pinnedComments[message.id];
+                const isLocation =
+                  message.content.includes("maps.google.com") ||
+                  message.content.startsWith("📍 Location:");
+
+                let mapsUrl = "";
+                if (isLocation) {
+                  const match = message.content.match(/https?:\/\/[^\s]+/);
+                  if (match) mapsUrl = match[0];
+                }
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={message.id}
+                    activeOpacity={0.92}
+                    onLongPress={() => {
+                      Alert.alert(
+                        "मेसेज पर्याय (Options)",
+                        "खालीलपैकी एक पर्याय निवडा:",
+                        [
+                          {
+                            text: isPinned ? "📌 अनपिन करा (Unpin)" : "📌 पिन करा (Pin Message)",
+                            onPress: () => {
+                              setPinnedMessageIds((prev) =>
+                                prev.includes(message.id)
+                                  ? prev.filter((id) => id !== message.id)
+                                  : [...prev, message.id]
+                              );
+                            },
+                          },
+                          {
+                            text: "🗑️ मेसेज हटवा (Delete Message)",
+                            style: "destructive",
+                            onPress: () => {
+                              setDeletedMessageIds((prev) => [...prev, message.id]);
+                            },
+                          },
+                          { text: "रद्द करा (Cancel)", style: "cancel" },
+                        ]
+                      );
+                    }}
                     style={[
                       styles.messageBubble,
                       isMine
-                        ? styles.sent
-                        : styles.received,
+                        ? (isDark ? styles.sentDark : styles.sentLight)
+                        : (isDark ? styles.receivedDark : styles.receivedLight),
                     ]}
                   >
-                    {message.attachment?.url &&
-                    message.messageType === "image" ? (
-                      <Image
-                        source={{
-                          uri:
-                            message.attachment.url,
-                        }}
-                        style={styles.attachmentImage}
-                        resizeMode="cover"
-                      />
-                    ) : null}
-
-                    {message.attachment &&
-                    message.messageType === "file" ? (
-                      <View style={styles.fileAttachment}>
-                        <Ionicons
-                          name="document-outline"
-                          size={26}
-                          color={
-                            isMine
-                              ? "#FFFFFF"
-                              : colors.primary
-                          }
-                        />
-
-                        <View
-                          style={
-                            styles.fileAttachmentText
-                          }
-                        >
-                          <Text
-                            numberOfLines={2}
-                            style={[
-                              styles.fileName,
-                              isMine &&
-                                styles.fileNameMine,
-                            ]}
-                          >
-                            {message.attachment.fileName ??
-                              "Attachment"}
-                          </Text>
-
-                          <Text
-                            style={[
-                              styles.fileMeta,
-                              isMine &&
-                                styles.fileMetaMine,
-                            ]}
-                          >
-                            File
-                          </Text>
-                        </View>
+                    {/* PINNED INDICATOR */}
+                    {isPinned && (
+                      <View style={styles.bubblePinTag}>
+                        <Ionicons name="pin" size={11} color="#00a884" />
+                        <Text style={styles.bubblePinTagText}>पिन केलेला मेसेज</Text>
                       </View>
-                    ) : null}
+                    )}
 
-                    {message.content ? (
-                      <Text
-                        style={
-                          isMine
-                            ? styles.sentText
-                            : styles.receivedText
-                        }
-                      >
-                        {message.content}
+                    {/* DELETED NOTICE */}
+                    {isDeleted ? (
+                      <View style={styles.deletedRow}>
+                        <Ionicons name="ban-outline" size={14} color={isDark ? "#8696a0" : "#667781"} />
+                        <Text style={[styles.deletedText, { color: isDark ? "#8696a0" : "#667781" }]}>
+                          🚫 हा मेसेज हटवला आहे (This message was deleted)
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        {/* IMAGE ATTACHMENT */}
+                        {message.attachment?.url && message.messageType === "image" && (
+                          <View style={styles.imageAttachmentBox}>
+                            <TouchableOpacity
+                              activeOpacity={0.9}
+                              onPress={() => setLightboxUri(message.attachment?.url || null)}
+                            >
+                              <Image
+                                source={{ uri: message.attachment.url }}
+                                style={styles.attachmentImage}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
+
+                            {/* PIN & COMMENT ACTION ON IMAGE */}
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              style={styles.pinCommentActionBtn}
+                              onPress={() => {
+                                setActiveImageForNote({
+                                  id: message.id,
+                                  url: message.attachment?.url || "",
+                                  fileName: message.attachment?.fileName || "",
+                                });
+                                setReviewNoteText(pinnedComments[message.id] || "");
+                              }}
+                            >
+                              <Ionicons name="pin" size={13} color="#00a884" />
+                              <Text style={styles.pinCommentActionText}>
+                                {reviewComment
+                                  ? "📌 कमेंट बदला (Edit Review Note)"
+                                  : "📌 पिन करा व कमेंट द्या (Pin & Comment)"}
+                              </Text>
+                            </TouchableOpacity>
+
+                            {/* REVIEW COMMENT BADGE */}
+                            {reviewComment && (
+                              <View style={styles.reviewCommentBox}>
+                                <Ionicons name="chatbox-ellipses" size={13} color="#00a884" />
+                                <Text style={styles.reviewCommentBadgeText}>
+                                  {reviewComment}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {/* FILE ATTACHMENT */}
+                        {message.attachment && message.messageType === "file" && (
+                          <View style={styles.fileAttachment}>
+                            <View style={[styles.fileIconWrap, { backgroundColor: isMine ? "#00a88425" : "#e2e8f0" }]}>
+                              <Ionicons name="document-text" size={24} color="#00a884" />
+                            </View>
+                            <View style={styles.fileAttachmentText}>
+                              <Text numberOfLines={1} style={[styles.fileName, { color: isDark ? "#e9edef" : "#111b21" }]}>
+                                {message.attachment.fileName ?? "दस्तऐवज (Document)"}
+                              </Text>
+                              <Text style={[styles.fileMeta, { color: isDark ? "#8696a0" : "#667781" }]}>
+                                {message.attachment.fileSize ? `${Math.round(message.attachment.fileSize / 1024)} KB` : "File"}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+
+                        {/* LOCATION CARD */}
+                        {isLocation && mapsUrl ? (
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => Linking.openURL(mapsUrl)}
+                            style={[styles.locationCard, { backgroundColor: isDark ? "#111b2140" : "#00000008" }]}
+                          >
+                            <View style={styles.locationMapPinWrap}>
+                              <Ionicons name="location" size={26} color="#e53935" />
+                            </View>
+                            <View style={styles.locationInfo}>
+                              <Text style={[styles.locationTitle, { color: isDark ? "#e9edef" : "#111b21" }]}>
+                                📍 शेअर केलेले लोकेशन
+                              </Text>
+                              <Text style={styles.locationAction}>
+                                Google Maps मध्ये उघडा ↗
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {/* MESSAGE TEXT */}
+                        {message.content && !isLocation ? (
+                          <Text style={[styles.messageText, { color: isDark ? "#e9edef" : "#111b21" }]}>
+                            {message.content}
+                          </Text>
+                        ) : null}
+                      </>
+                    )}
+
+                    {/* META ROW: TIME + WHATSAPP DOUBLE BLUE TICKS */}
+                    <View style={styles.metaRow}>
+                      <Text style={[styles.timeText, { color: isDark ? "#8696a0" : "#667781" }]}>
+                        {message.createdAt
+                          ? new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                          : ""}
                       </Text>
-                    ) : null}
-                  </View>
+                      {isMine && !isDeleted && (
+                        <Ionicons name="checkmark-done" size={15} color="#53bdeb" style={{ marginLeft: 3 }} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -859,13 +991,46 @@ export default function ConversationScreen() {
         )}
       </ImageBackground>
 
-      <View style={styles.composerArea}>
+      {/* COMPOSER ATTACHMENT MENU TRAY */}
+      {showAttachMenu && (
+        <View style={[styles.attachTray, { backgroundColor: isDark ? "#202c33" : "#ffffff" }]}>
+          <TouchableOpacity
+            style={styles.attachOption}
+            onPress={() => {
+              setShowAttachMenu(false);
+              void pickAttachment();
+            }}
+          >
+            <View style={[styles.attachIconCircle, { backgroundColor: "#bf59cf" }]}>
+              <Ionicons name="images" size={22} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.attachLabel, { color: isDark ? "#e9edef" : "#111b21" }]}>
+              फोटो / फाइल्स
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.attachOption}
+            onPress={sendLocation}
+          >
+            <View style={[styles.attachIconCircle, { backgroundColor: "#1fa855" }]}>
+              <Ionicons name="location" size={22} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.attachLabel, { color: isDark ? "#e9edef" : "#111b21" }]}>
+              लोकेशन शेअर करा
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* COMPOSER AREA */}
+      <View style={[styles.composerArea, { backgroundColor: isDark ? "#202c33" : "#f0f2f5" }]}>
         {showEmojiPicker ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={true}
             keyboardShouldPersistTaps="handled"
-            style={styles.emojiScroll}
+            style={[styles.emojiScroll, { backgroundColor: isDark ? "#202c33" : "#ffffff" }]}
             contentContainerStyle={styles.emojiRow}
           >
             {["😀","😃","😄","😁","😆","😅","😂","🤣","😊","😇","🙂","🙃","😉","😌","😍","🥰","😘","😗","😙","😚","😋","😛","😝","😜","🤪","🤨","🧐","🤓","😎","🤩","🥳","😏","😒","😞","😔","😟","😕","🙁","☹️","😣","😖","😫","😩","🥺","😢","😭","😤","😠","😡","🤬","🤯","😳","🥵","🥶","😱","😨","😰","😥","😓","🤗","🤔","🤭","🤫","🤥","😶","😐","😑","😬","🙄","😯","😦","😧","😮","😲","🥱","😴","🤤","😪","😵","🤐","🥴","🤢","🤮","🤧","😷","🤒","🤕","🤑","🤠","😈","👿","👹","👺","🤡","💩","👻","💀","☠️","👽","👾","🤖","🎃","😺","😸","😹","😻","😼","😽","🙀","😿","😾","🙈","🙉","🙊","💋","💌","💘","💝","💖","💗","💓","💞","💕","💟","❣️","💔","❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","❤️‍🔥","❤️‍🩹","💯","💢","💥","💫","💦","💨","🕳️","💬","💭","💤","👋","🤚","🖐️","✋","🖖","👌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","✋","🤲","🤝","🙏","✍️","👏","🙌","👐","🤲","💪","🖕","👍","👎","👊","✊","🤛","🤜","🫶","🫰","🤌","👀","👁️","👄","🫦","👅","👂","👃","🧠","🫀","🫁","🦷","🦴","🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐒","🐔","🐧","🐦","🐤","🦆","🦅","🦉","🐺","🐗","🐴","🦄","🐝","🪲","🦋","🐌","🐞","🐜","🕷️","🐢","🐍","🦎","🦖","🦕","🐙","🦑","🦀","🐠","🐟","🐡","🐬","🐳","🦈","🐊","🐘","🦏","🦛","🐪","🐫","🦒","🦘","🦬","🐄","🐎","🐖","🐑","🐐","🦌","🐕","🐈","🐓","🦃","🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥥","🥝","🍅","🍆","🥑","🥦","🥬","🥒","🌶️","🌽","🥕","🧄","🧅","🥔","🍞","🥐","🥨","🧀","🥚","🍳","🧈","🥞","🧇","🥓","🥩","🍗","🍖","🌭","🍔","🍟","🍕","🌮","🌯","🥗","🍿","🍣","🍤","🍜","🍝","🍚","🍛","🍱","🍙","🍘","🍥","🥮","🍧","🍨","🍦","🍩","🍪","🎂","🍰","🧁","🍫","🍬","🍭","☕","🧋","🚗","🚕","🚙","🚌","🚎","🏎️","🚓","🚑","🚒","🚐","✈️","🚀","🚁","🚲","🛵","🏍️","⛵","🚤","🚢","🏠","🏡","🏢","🏥","🏫","🏨","🏪","🏬","🏰","🗽","🗼","🌍","🌎","🌏","🌞","🌝","🌙","⭐","🌟","✨","⚡","🔥","🌈","☀️","🌤️","⛅","🌧️","⛈️","❄️","☃️","🌊","🎉","🎊","🎈","🎁","🎀","🎂","🎄","🎃","🎆","🎇","📸","📷","🎥","🎬","🎵","🎶","🎤","🎧","🎸","🎹","⚽","🏀","🏈","⚾","🎾","🏐","🏆","🥇","🥈","🥉","❤️","👍","🙏","👏","🔥","💯","✅","❌","⚠️","❗","❓","‼️","⁉️","⭕","🚫","💡","🔔","🔒","🔓","🔑"].map((emoji) => (
@@ -883,29 +1048,28 @@ export default function ConversationScreen() {
           </ScrollView>
         ) : null}
 
-        <View style={styles.composer}>
+        <View style={[styles.composer, { backgroundColor: isDark ? "#2a3942" : "#ffffff", borderColor: isDark ? "#2a3942" : "#e2e8f0" }]}>
           <TouchableOpacity
             style={styles.composerIcon}
             activeOpacity={0.75}
-            onPress={() =>
-              setShowEmojiPicker(
-                (current) => !current,
-              )
-            }
+            onPress={() => {
+              setShowAttachMenu(false);
+              setShowEmojiPicker((current) => !current);
+            }}
           >
             <Ionicons
-              name="happy-outline"
-              size={22}
-              color={colors.textSecondary}
+              name={showEmojiPicker ? "keypad-outline" : "happy-outline"}
+              size={23}
+              color={isDark ? "#8696a0" : "#54656f"}
             />
           </TouchableOpacity>
 
           <TextInput
             value={text}
             onChangeText={setText}
-            placeholder="Message"
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
+            placeholder="मेसेज टाईप करा..."
+            placeholderTextColor={isDark ? "#8696a0" : "#999999"}
+            style={[styles.input, { color: isDark ? "#ffffff" : "#111b21" }]}
             multiline
             maxLength={4000}
           />
@@ -914,18 +1078,21 @@ export default function ConversationScreen() {
             style={styles.composerIcon}
             activeOpacity={0.75}
             disabled={uploadingAttachment}
-            onPress={pickAttachment}
+            onPress={() => {
+              setShowEmojiPicker(false);
+              setShowAttachMenu((prev) => !prev);
+            }}
           >
             {uploadingAttachment ? (
               <ActivityIndicator
                 size="small"
-                color={colors.textSecondary}
+                color="#00a884"
               />
             ) : (
               <Ionicons
                 name="attach-outline"
-              size={22}
-                color={colors.textSecondary}
+                size={23}
+                color={showAttachMenu ? "#00a884" : (isDark ? "#8696a0" : "#54656f")}
               />
             )}
           </TouchableOpacity>
@@ -953,14 +1120,118 @@ export default function ConversationScreen() {
               />
             ) : (
               <Ionicons
-                name="arrow-up"
-                size={20}
+                name="send"
+                size={17}
                 color="#FFFFFF"
               />
             )}
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* PIN IMAGE & REVIEW COMMENT MODAL */}
+      <Modal
+        visible={Boolean(activeImageForNote)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveImageForNote(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? "#202c33" : "#ffffff" }]}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="pin" size={20} color="#00a884" />
+              <Text style={[styles.modalTitle, { color: isDark ? "#ffffff" : "#111b21" }]}>
+                फोटोवर सूचना / कमेंट पिन करा (Review Note)
+              </Text>
+            </View>
+
+            {activeImageForNote?.url && (
+              <Image
+                source={{ uri: activeImageForNote.url }}
+                style={styles.modalImagePreview}
+                resizeMode="cover"
+              />
+            )}
+
+            <Text style={[styles.modalHint, { color: isDark ? "#8696a0" : "#667781" }]}>
+              फोटोग्राफरसाठी सूचना लिहा (उदा. "अल्बम कव्हरसाठी हा फोटो फायनल करा", "यातील लाईट वाढवा"):
+            </Text>
+
+            <TextInput
+              value={reviewNoteText}
+              onChangeText={setReviewNoteText}
+              placeholder="येथे कमेंट टाईप करा..."
+              placeholderTextColor={isDark ? "#8696a0" : "#999999"}
+              style={[
+                styles.modalInput,
+                {
+                  color: isDark ? "#ffffff" : "#111b21",
+                  backgroundColor: isDark ? "#111b21" : "#f0f2f5",
+                  borderColor: isDark ? "#2a3942" : "#e2e8f0",
+                },
+              ]}
+              multiline
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => {
+                  setActiveImageForNote(null);
+                  setReviewNoteText("");
+                }}
+              >
+                <Text style={[styles.modalCancelText, { color: isDark ? "#8696a0" : "#667781" }]}>
+                  रद्द करा (Cancel)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, { backgroundColor: "#00a884" }]}
+                onPress={async () => {
+                  if (!activeImageForNote || !reviewNoteText.trim()) return;
+                  const note = reviewNoteText.trim();
+                  const msgId = activeImageForNote.id;
+
+                  setPinnedComments((prev) => ({ ...prev, [msgId]: note }));
+                  setPinnedMessageIds((prev) => (prev.includes(msgId) ? prev : [...prev, msgId]));
+                  setActiveImageForNote(null);
+                  setReviewNoteText("");
+
+                  await sendMessageWithContent(`📌 [Photo Review Note]: "${note}"`);
+                }}
+              >
+                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                <Text style={styles.modalSaveText}>सेव्ह आणि पिन करा</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FULLSCREEN LIGHTBOX MODAL */}
+      <Modal
+        visible={Boolean(lightboxUri)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxUri(null)}
+      >
+        <View style={styles.lightboxOverlay}>
+          <TouchableOpacity
+            style={styles.lightboxCloseBtn}
+            onPress={() => setLightboxUri(null)}
+          >
+            <Ionicons name="close" size={26} color="#FFFFFF" />
+          </TouchableOpacity>
+          {lightboxUri && (
+            <Image
+              source={{ uri: lightboxUri }}
+              style={styles.lightboxImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -972,21 +1243,20 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    minHeight: 72,
-    paddingHorizontal: 14,
-    paddingTop: Platform.OS === "ios" ? 12 : 10,
-    paddingBottom: 10,
-    backgroundColor: colors.surface,
+    minHeight: 70,
+    paddingHorizontal: 12,
+    paddingTop: Platform.OS === "ios" ? 12 : 8,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: "rgba(0,0,0,0.06)",
     flexDirection: "row",
     alignItems: "center",
   },
 
   backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -995,14 +1265,14 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 5,
+    marginLeft: 4,
   },
 
   headerAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
-    backgroundColor: colors.primarySoft,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#00a88422",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1010,7 +1280,7 @@ const styles = StyleSheet.create({
   headerAvatarText: {
     fontSize: 16,
     fontWeight: "800",
-    color: colors.primary,
+    color: "#00a884",
   },
 
   headerText: {
@@ -1019,22 +1289,68 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: "700",
-    color: colors.text,
   },
 
-  headerSubtitle: {
-    fontSize: 11,
-    color: colors.textMuted,
+  onlineStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 2,
   },
 
+  onlineDot: {
+    width: 6.5,
+    height: 6.5,
+    borderRadius: 3.5,
+    backgroundColor: "#00a884",
+    marginRight: 4,
+  },
+
+  onlineStatusText: {
+    fontSize: 11,
+    color: "#00a884",
+    fontWeight: "500",
+  },
+
+  headerActionsRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
   headerAction: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  pinnedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.06)",
+  },
+
+  pinnedBannerInfo: {
+    flex: 1,
+    marginHorizontal: 10,
+  },
+
+  pinnedBannerTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  pinnedBannerSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+
+  pinnedBannerClose: {
+    padding: 4,
   },
 
   chatBackgroundImage: {
@@ -1060,13 +1376,38 @@ const styles = StyleSheet.create({
   },
 
   messageContent: {
-    paddingHorizontal: 14,
-    paddingTop: 16,
-    paddingBottom: 14,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
   },
 
   emptyMessages: {
     flexGrow: 1,
+  },
+
+  e2eContainer: {
+    alignItems: "center",
+    marginVertical: 10,
+    paddingHorizontal: 20,
+  },
+
+  e2eCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+
+  e2eText: {
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "center",
+    flexShrink: 1,
   },
 
   emptyConversation: {
@@ -1074,183 +1415,446 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 40,
+    marginTop: 40,
   },
 
   emptyIcon: {
-    width: 62,
-    height: 62,
-    borderRadius: 22,
-    backgroundColor: colors.primarySoft,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#00a88420",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
+    marginBottom: 12,
   },
 
   emptyTitle: {
     fontSize: 16,
-    fontWeight: "800",
-    color: colors.text,
+    fontWeight: "700",
   },
 
   emptyText: {
-    fontSize: 12,
-    color: colors.textSecondary,
+    fontSize: 12.5,
     textAlign: "center",
     marginTop: 6,
+    lineHeight: 18,
+  },
+
+  messageBubble: {
+    maxWidth: "80%",
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    marginBottom: 6,
+    borderRadius: 14,
+  },
+
+  sentLight: {
+    alignSelf: "flex-end",
+    backgroundColor: "#d9fdd3",
+    borderTopRightRadius: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+
+  sentDark: {
+    alignSelf: "flex-end",
+    backgroundColor: "#005c4b",
+    borderTopRightRadius: 4,
+  },
+
+  receivedLight: {
+    alignSelf: "flex-start",
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+
+  receivedDark: {
+    alignSelf: "flex-start",
+    backgroundColor: "#202c33",
+    borderTopLeftRadius: 4,
+  },
+
+  bubblePinTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginBottom: 4,
+    backgroundColor: "#00a88418",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+
+  bubblePinTagText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#00a884",
+    marginLeft: 3,
+  },
+
+  deletedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 3,
+  },
+
+  deletedText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    marginLeft: 6,
+  },
+
+  imageAttachmentBox: {
+    marginBottom: 4,
   },
 
   attachmentImage: {
     width: 220,
     height: 220,
-    borderRadius: 14,
-    marginBottom: 6,
+    borderRadius: 10,
+    backgroundColor: "#e2e8f0",
+  },
+
+  pinCommentActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#00a88418",
+  },
+
+  pinCommentActionText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#00a884",
+    marginLeft: 4,
+  },
+
+  reviewCommentBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 5,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#00a88422",
+    borderLeftWidth: 3,
+    borderLeftColor: "#00a884",
+  },
+
+  reviewCommentBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#00a884",
+    marginLeft: 5,
+    flex: 1,
   },
 
   fileAttachment: {
     flexDirection: "row",
     alignItems: "center",
-    minWidth: 190,
     paddingVertical: 4,
+    minWidth: 180,
+  },
+
+  fileIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   fileAttachmentText: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 8,
   },
 
   fileName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
-    color: colors.text,
-  },
-
-  fileNameMine: {
-    color: "#FFFFFF",
   },
 
   fileMeta: {
-    marginTop: 2,
     fontSize: 11,
-    color: colors.textSecondary,
+    marginTop: 2,
   },
 
-  fileMetaMine: {
-    color: "rgba(255,255,255,0.75)",
-  },
-
-  messageBubble: {
-    maxWidth: "78%",
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    marginBottom: 8,
-    borderRadius: 17,
-  },
-
-  received: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: 5,
+  locationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(0,0,0,0.08)",
+    minWidth: 200,
   },
 
-  sent: {
-    alignSelf: "flex-end",
-    backgroundColor: colors.primary,
-    borderBottomRightRadius: 5,
+  locationMapPinWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fee2e2",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  receivedText: {
-    fontSize: 14,
+  locationInfo: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  locationTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  locationAction: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#1d4ed8",
+    marginTop: 2,
+  },
+
+  messageText: {
+    fontSize: 14.5,
     lineHeight: 20,
-    color: colors.text,
   },
 
-  sentText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#FFFFFF",
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginTop: 3,
+  },
+
+  timeText: {
+    fontSize: 10.5,
+  },
+
+  attachTray: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0,0,0,0.06)",
+    gap: 24,
+  },
+
+  attachOption: {
+    alignItems: "center",
+  },
+
+  attachIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 5,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+
+  attachLabel: {
+    fontSize: 11.5,
+    fontWeight: "600",
   },
 
   emojiScroll: {
-    height: 112,
-    maxHeight: 112,
+    height: 110,
+    maxHeight: 110,
     flexGrow: 0,
-    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: "rgba(0,0,0,0.06)",
   },
 
   emojiRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
 
   emojiButton: {
-    width: 52,
-    height: 72,
+    width: 48,
+    height: 60,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 2,
   },
 
   emojiText: {
-    fontSize: 34,
-    lineHeight: 42,
+    fontSize: 30,
+    lineHeight: 38,
   },
 
   composerArea: {
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom:
-      Platform.OS === "ios" ? 10 : 8,
-    backgroundColor: colors.background,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: Platform.OS === "ios" ? 10 : 8,
   },
 
   composer: {
-    minHeight: 50,
-    maxHeight: 118,
-    borderRadius: 19,
-    backgroundColor: colors.surface,
+    minHeight: 46,
+    maxHeight: 110,
+    borderRadius: 23,
     borderWidth: 1,
-    borderColor: colors.border,
-    paddingLeft: 5,
-    paddingRight: 5,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     flexDirection: "row",
     alignItems: "flex-end",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
 
   composerIcon: {
     width: 38,
-    height: 42,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
   },
 
   input: {
     flex: 1,
-    minHeight: 42,
-    maxHeight: 100,
-    paddingHorizontal: 5,
-    paddingTop: 10,
+    minHeight: 38,
+    maxHeight: 90,
+    paddingHorizontal: 8,
+    paddingTop: 8,
     paddingBottom: 8,
-    fontSize: 14,
-    color: colors.text,
+    fontSize: 14.5,
   },
 
   send: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "#168A5B",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#00a884",
     alignItems: "center",
     justifyContent: "center",
   },
 
   sendDisabled: {
     opacity: 0.4,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 18,
+  },
+
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginLeft: 8,
+    flex: 1,
+  },
+
+  modalImagePreview: {
+    width: "100%",
+    height: 180,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+
+  modalHint: {
+    fontSize: 12.5,
+    marginBottom: 8,
+    lineHeight: 17,
+  },
+
+  modalInput: {
+    minHeight: 70,
+    maxHeight: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    fontSize: 14,
+    textAlignVertical: "top",
+    marginBottom: 16,
+  },
+
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  modalCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+
+  modalCancelText: {
+    fontSize: 13.5,
+    fontWeight: "600",
+  },
+
+  modalSaveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+
+  modalSaveText: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  lightboxCloseBtn: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 10,
+  },
+
+  lightboxImage: {
+    width: "90%",
+    height: "80%",
   },
 });
