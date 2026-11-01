@@ -6,9 +6,9 @@
 
 import { Platform } from "react-native";
 
-export const MATCH_THRESHOLD = 0.58; // Standard optimal threshold for ResNet-34 FaceRecognitionNet (99%+ accuracy)
+export const MATCH_THRESHOLD = 0.60; // Standard optimal threshold for ResNet-34 FaceRecognitionNet (99%+ accuracy)
 const CDN_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js";
-const CDN_MODEL_PATH = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+const CDN_MODEL_PATH = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model";
 
 let modelsLoaded = false;
 let modelLoadingPromise: Promise<boolean> | null = null;
@@ -143,43 +143,70 @@ export function loadImageElement(source: string | HTMLImageElement): Promise<HTM
     });
   }
 
-  // Safe image URL proxy if needed
+  const isLocalOrDirect =
+    source.startsWith("data:") ||
+    source.startsWith("blob:") ||
+    source.includes("photoos.in") ||
+    source.includes("supabase.co") ||
+    source.includes("supabase.in") ||
+    source.includes("r2.cloudflarestorage.com") ||
+    source.includes("firebasestorage.app") ||
+    source.includes("googleusercontent.com") ||
+    source.includes("unsplash.com");
+
+  // Only route through server proxy if third-party and cross-origin
   let safeUrl = source;
-  if (
-    source.startsWith("http://") ||
-    source.startsWith("https://")
-  ) {
-    // If external cross-origin URL, route through photoos proxy if not already clean
-    if (!source.startsWith("data:") && !source.startsWith("blob:")) {
-      safeUrl = `https://app.photoos.in/api/storage/proxy?url=${encodeURIComponent(source)}`;
-    }
+  if (!isLocalOrDirect && (source.startsWith("http://") || source.startsWith("https://"))) {
+    safeUrl = `https://app.photoos.in/api/storage/proxy?url=${encodeURIComponent(source)}`;
   }
 
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    // Do NOT set crossOrigin on data: or blob: URIs (avoids iOS Safari / WebKit security failure)
+    if (!source.startsWith("data:") && !source.startsWith("blob:")) {
+      img.crossOrigin = "anonymous";
+    }
 
+    let timedOut = false;
     const timeout = setTimeout(() => {
+      timedOut = true;
       img.src = "";
       reject(new Error("Image loading timed out."));
-    }, 20000);
+    }, 10000);
 
     img.onload = () => {
-      clearTimeout(timeout);
-      resolve(img);
+      if (!timedOut) {
+        clearTimeout(timeout);
+        resolve(img);
+      }
     };
 
     img.onerror = () => {
-      clearTimeout(timeout);
-      // Fallback: retry with direct URL if proxy failed
-      if (safeUrl !== source) {
-        const retryImg = new Image();
-        retryImg.crossOrigin = "anonymous";
-        retryImg.onload = () => resolve(retryImg);
-        retryImg.onerror = (e) => reject(e);
-        retryImg.src = source;
-      } else {
-        reject(new Error(`Failed to load image: ${source}`));
+      if (!timedOut) {
+        clearTimeout(timeout);
+        // Fallback: retry with direct URL if proxy failed
+        if (safeUrl !== source) {
+          const retryImg = new Image();
+          if (!source.startsWith("data:") && !source.startsWith("blob:")) {
+            retryImg.crossOrigin = "anonymous";
+          }
+          const retryTimeout = setTimeout(() => {
+            retryImg.src = "";
+            reject(new Error(`Failed to load image: ${source}`));
+          }, 10000);
+
+          retryImg.onload = () => {
+            clearTimeout(retryTimeout);
+            resolve(retryImg);
+          };
+          retryImg.onerror = (e) => {
+            clearTimeout(retryTimeout);
+            reject(new Error(`Failed to load image: ${source}`));
+          };
+          retryImg.src = source;
+        } else {
+          reject(new Error(`Failed to load image: ${source}`));
+        }
       }
     };
 
@@ -251,7 +278,7 @@ export async function extractSelfieFaceDescriptor(
     // 1. Try TinyFaceDetector with higher input resolution
     const tinyOptions = new faceapi.TinyFaceDetectorOptions({
       inputSize: 512,
-      scoreThreshold: 0.35,
+      scoreThreshold: 0.28,
     });
 
     let detections = await faceapi
@@ -259,10 +286,24 @@ export async function extractSelfieFaceDescriptor(
       .withFaceLandmarks()
       .withFaceDescriptors();
 
-    // 2. SSD MobileNet fallback if no face was found
+    // 2. Fallback: try smaller input size for angled / smaller faces
+    if (detections.length === 0) {
+      try {
+        const fallbackTiny = new faceapi.TinyFaceDetectorOptions({
+          inputSize: 320,
+          scoreThreshold: 0.20,
+        });
+        detections = await faceapi
+          .detectAllFaces(img, fallbackTiny)
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+      } catch {}
+    }
+
+    // 3. SSD MobileNet fallback if no face was found
     if (detections.length === 0 && faceapi.nets.ssdMobilenetv1?.isLoaded) {
       try {
-        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25 });
+        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.22 });
         detections = await faceapi
           .detectAllFaces(img, ssdOptions)
           .withFaceLandmarks()
@@ -324,7 +365,7 @@ export async function extractPhotoFacesDescriptors(
 
     const tinyOptions = new faceapi.TinyFaceDetectorOptions({
       inputSize: 512,
-      scoreThreshold: 0.32,
+      scoreThreshold: 0.25,
     });
 
     let detections = await faceapi
@@ -332,9 +373,22 @@ export async function extractPhotoFacesDescriptors(
       .withFaceLandmarks()
       .withFaceDescriptors();
 
+    if (detections.length === 0) {
+      try {
+        const fallbackTiny = new faceapi.TinyFaceDetectorOptions({
+          inputSize: 320,
+          scoreThreshold: 0.18,
+        });
+        detections = await faceapi
+          .detectAllFaces(img, fallbackTiny)
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+      } catch {}
+    }
+
     if (detections.length === 0 && faceapi.nets.ssdMobilenetv1?.isLoaded) {
       try {
-        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.22 });
+        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.20 });
         detections = await faceapi
           .detectAllFaces(img, ssdOptions)
           .withFaceLandmarks()

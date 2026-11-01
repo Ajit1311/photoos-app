@@ -183,9 +183,15 @@ export default function ConversationScreen() {
             return current;
           }
           const remoteIds = new Set(items.map((m) => m.id));
-          const pendingLocal = current.filter(
-            (m) => m.id.startsWith("local-") && !remoteIds.has(m.id),
-          );
+          const pendingLocal = current.filter((m) => {
+            if (!m.id.startsWith("local-") || remoteIds.has(m.id)) return false;
+            return !items.some((remote) => {
+              if (remote.content !== m.content) return false;
+              const rTime = remote.createdAt ? new Date(remote.createdAt).getTime() : 0;
+              const mTime = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+              return rTime === 0 || mTime === 0 || Math.abs(rTime - mTime) < 20000;
+            });
+          });
           return [...items, ...pendingLocal];
         });
       } catch (error) {

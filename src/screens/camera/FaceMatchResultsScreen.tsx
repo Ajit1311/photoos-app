@@ -131,7 +131,16 @@ export default function FaceMatchResultsScreen() {
 
   // Load live event gallery photos from backend
   const loadGalleryAndMatch = useCallback(async () => {
-    const currentEvent = getActiveEventContextSync() || activeEvent;
+    const paramEvent = route.params?.eventId
+      ? {
+          eventId: route.params.eventId,
+          eventName: route.params.eventName || "Live Event Gallery",
+          studioName: route.params.studioName || "Photo Studio",
+          type: route.params.type || (route.params.eventId.startsWith("ev_corp_") ? "corporate" : "studio"),
+        }
+      : null;
+
+    const currentEvent = paramEvent || getActiveEventContextSync() || activeEvent;
     if (!currentEvent?.eventId) {
       setMatchingState("done");
       setViewTab("all");
