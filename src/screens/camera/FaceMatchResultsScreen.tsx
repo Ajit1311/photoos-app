@@ -425,6 +425,19 @@ export default function FaceMatchResultsScreen() {
             }
           }
         } catch {}
+
+        // Crash loop prevention check on iOS / Safari
+        const attemptKey = `@photoos_match_attempts_${eventId}`;
+        const attempts = Number(sessionStorage.getItem(attemptKey) || "0");
+        if (attempts >= 2) {
+          console.warn("[FaceMatchResults] Detected repeated matching attempts. Clearing cache to break loop.");
+          sessionStorage.removeItem("@photoos_last_selfie_v2");
+          sessionStorage.removeItem(attemptKey);
+          setViewTab("all");
+          setMatchingState("done");
+          return;
+        }
+        sessionStorage.setItem(attemptKey, String(attempts + 1));
       }
 
       // Step 2: Initialize lightweight AI models
@@ -486,8 +499,8 @@ export default function FaceMatchResultsScreen() {
           }
         }
 
-        // Cooperative 20ms yield to allow browser GC to free textures and keep UI silky smooth
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        // Cooperative 60ms yield to allow browser GC to free memory and keep UI silky smooth
+        await new Promise((resolve) => setTimeout(resolve, 60));
       }
 
       // Sort matched photos by highest confidence
@@ -497,6 +510,7 @@ export default function FaceMatchResultsScreen() {
       if (Platform.OS === "web" && typeof window !== "undefined" && eventId) {
         try {
           sessionStorage.setItem(`@photoos_matched_${eventId}`, JSON.stringify(matchedList));
+          sessionStorage.removeItem(`@photoos_match_attempts_${eventId}`);
         } catch {}
       }
       setViewTab(matchedList.length > 0 ? "matched" : "all");

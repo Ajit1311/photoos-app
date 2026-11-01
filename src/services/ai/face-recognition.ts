@@ -111,6 +111,28 @@ export async function loadFaceRecognitionModels(): Promise<boolean> {
         faceapi.nets.faceRecognitionNet.loadFromUri(CDN_MODEL_PATH),
       ]);
 
+      // Switch backend to CPU on iOS / Safari to prevent WebGL Metal GPU memory crashes
+      const isIOS =
+        typeof navigator !== "undefined" &&
+        (/iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+          (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1));
+
+      if (faceapi.tf) {
+        if (isIOS) {
+          try {
+            await faceapi.tf.setBackend("cpu");
+            console.log("[FaceRecognition] iOS WebKit detected: using CPU backend for 100% stability");
+          } catch (backendErr) {
+            console.warn("[FaceRecognition] Could not switch to CPU backend:", backendErr);
+          }
+        }
+        if (faceapi.tf.env && typeof faceapi.tf.env().set === "function") {
+          try {
+            faceapi.tf.env().set("WEBGL_DELETE_TEXTURE_THRESHOLD", 0);
+          } catch {}
+        }
+      }
+
       modelsLoaded = true;
       console.log("[FaceRecognition] AI Models loaded successfully!");
       return true;
@@ -212,11 +234,11 @@ export function loadImageElement(source: string | HTMLImageElement): Promise<HTM
 }
 
 /**
- * Optimizes an image onto a maximum 480px canvas for ultra fast mobile-safe inference
+ * Optimizes an image onto a maximum 320px canvas for ultra fast mobile-safe inference
  */
 export function createOptimizedFaceCanvas(
   img: HTMLImageElement,
-  maxDimension = 480
+  maxDimension = 320
 ): HTMLCanvasElement | HTMLImageElement {
   if (typeof document === "undefined") return img;
   const w = img.naturalWidth || img.width;
@@ -270,17 +292,27 @@ export async function extractSelfieFaceDescriptor(
   }
 
   let canvasEl: HTMLCanvasElement | null = null;
+  let rawImg: HTMLImageElement | null = null;
+  let hasScope = false;
+
+  if (faceapi.tf?.engine) {
+    try {
+      faceapi.tf.engine().startScope();
+      hasScope = true;
+    } catch {}
+  }
+
   try {
-    const rawImg = await loadImageElement(imageSource);
-    const img = createOptimizedFaceCanvas(rawImg, 480);
+    rawImg = await loadImageElement(imageSource);
+    const img = createOptimizedFaceCanvas(rawImg, 320);
     if (img instanceof HTMLCanvasElement) {
       canvasEl = img;
     }
 
-    // 1. TinyFaceDetector with balanced mobile resolution
+    // 1. TinyFaceDetector with balanced mobile resolution (320px)
     const tinyOptions = new faceapi.TinyFaceDetectorOptions({
-      inputSize: 416,
-      scoreThreshold: 0.22,
+      inputSize: 320,
+      scoreThreshold: 0.20,
     });
 
     let detections = await faceapi
@@ -288,11 +320,11 @@ export async function extractSelfieFaceDescriptor(
       .withFaceLandmarks()
       .withFaceDescriptors();
 
-    // 2. Fallback: try smaller input size for angled / distant faces
+    // 2. Fallback: try smaller input size for angled / distant faces (224px)
     if (detections.length === 0) {
       try {
         const fallbackTiny = new faceapi.TinyFaceDetectorOptions({
-          inputSize: 320,
+          inputSize: 224,
           scoreThreshold: 0.16,
         });
         detections = await faceapi
@@ -336,9 +368,21 @@ export async function extractSelfieFaceDescriptor(
       error: err?.message || "Failed to analyze selfie.",
     };
   } finally {
+    if (hasScope && faceapi.tf?.engine) {
+      try {
+        faceapi.tf.engine().endScope();
+      } catch {}
+    }
     if (canvasEl) {
       canvasEl.width = 0;
       canvasEl.height = 0;
+    }
+    if (rawImg) {
+      rawImg.onload = null;
+      rawImg.onerror = null;
+      try {
+        rawImg.src = "";
+      } catch {}
     }
   }
 }
@@ -356,16 +400,26 @@ export async function extractPhotoFacesDescriptors(
   if (!faceapi) return [];
 
   let canvasEl: HTMLCanvasElement | null = null;
+  let rawImg: HTMLImageElement | null = null;
+  let hasScope = false;
+
+  if (faceapi.tf?.engine) {
+    try {
+      faceapi.tf.engine().startScope();
+      hasScope = true;
+    } catch {}
+  }
+
   try {
-    const rawImg = await loadImageElement(imageSource);
-    const img = createOptimizedFaceCanvas(rawImg, 480);
+    rawImg = await loadImageElement(imageSource);
+    const img = createOptimizedFaceCanvas(rawImg, 320);
     if (img instanceof HTMLCanvasElement) {
       canvasEl = img;
     }
 
     const tinyOptions = new faceapi.TinyFaceDetectorOptions({
-      inputSize: 416,
-      scoreThreshold: 0.20,
+      inputSize: 320,
+      scoreThreshold: 0.18,
     });
 
     let detections = await faceapi
@@ -376,8 +430,8 @@ export async function extractPhotoFacesDescriptors(
     if (detections.length === 0) {
       try {
         const fallbackTiny = new faceapi.TinyFaceDetectorOptions({
-          inputSize: 320,
-          scoreThreshold: 0.16,
+          inputSize: 224,
+          scoreThreshold: 0.15,
         });
         detections = await faceapi
           .detectAllFaces(img, fallbackTiny)
@@ -386,7 +440,7 @@ export async function extractPhotoFacesDescriptors(
       } catch {}
     }
 
-    return detections.map((d: any) => ({
+    const results = detections.map((d: any) => ({
       descriptor: Array.from(d.descriptor as Float32Array),
       confidence: d.detection.score,
       box: {
@@ -396,13 +450,27 @@ export async function extractPhotoFacesDescriptors(
         height: d.detection.box.height,
       },
     }));
+
+    return results;
   } catch (err) {
     console.warn("[FaceRecognition] Could not extract photo faces:", err);
     return [];
   } finally {
+    if (hasScope && faceapi.tf?.engine) {
+      try {
+        faceapi.tf.engine().endScope();
+      } catch {}
+    }
     if (canvasEl) {
       canvasEl.width = 0;
       canvasEl.height = 0;
+    }
+    if (rawImg) {
+      rawImg.onload = null;
+      rawImg.onerror = null;
+      try {
+        rawImg.src = "";
+      } catch {}
     }
   }
 }
