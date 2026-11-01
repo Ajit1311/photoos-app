@@ -47,6 +47,8 @@ export interface DisplayPhoto extends LiveEventPhoto {
 interface PhotoThumbnailItemProps {
   photo: DisplayPhoto;
   theme: any;
+  allowDownloads: boolean;
+  watermarkUrl?: string | null;
   onSelect: () => void;
   onDownload: () => void;
 }
@@ -54,6 +56,8 @@ interface PhotoThumbnailItemProps {
 function PhotoThumbnailItem({
   photo,
   theme,
+  allowDownloads,
+  watermarkUrl,
   onSelect,
   onDownload,
 }: PhotoThumbnailItemProps) {
@@ -70,7 +74,19 @@ function PhotoThumbnailItem({
       activeOpacity={0.9}
       onPress={onSelect}
     >
-      <View style={styles.photoImageContainer}>
+      <View
+        style={styles.photoImageContainer}
+        {...(Platform.OS === "web"
+          ? {
+              onContextMenu: (e: any) => {
+                if (!allowDownloads) {
+                  e.preventDefault?.();
+                  e.stopPropagation?.();
+                }
+              },
+            }
+          : {})}
+      >
         {!isLoaded && (
           <View style={[styles.photoImageLoader, { backgroundColor: `${theme.primary}12` }]}>
             <ActivityIndicator size="small" color={theme.primary} />
@@ -87,6 +103,30 @@ function PhotoThumbnailItem({
             }
           }}
         />
+
+        {/* WATERMARK OVERLAY WHEN DOWNLOADS ARE OFF */}
+        {!allowDownloads && (
+          <View style={styles.thumbnailWatermarkOverlay} pointerEvents="none">
+            {watermarkUrl ? (
+              <View style={styles.watermarkStudioBadge}>
+                <Image
+                  source={{ uri: watermarkUrl }}
+                  style={styles.watermarkStudioThumbImg}
+                  resizeMode="contain"
+                />
+              </View>
+            ) : (
+              <View style={styles.watermarkSystemBadge}>
+                <Image
+                  source={require("../../../assets/PhotoOS-brand-master.png")}
+                  style={styles.watermarkSystemThumbLogo}
+                  resizeMode="contain"
+                />
+                <Text style={styles.watermarkSystemThumbText}>PhotoOS</Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
 
       {/* CONFIDENCE PILL (99%+ accuracy) */}
@@ -104,12 +144,14 @@ function PhotoThumbnailItem({
           {photo.name || "Event Photo"}
         </Text>
 
-        <TouchableOpacity
-          style={styles.photoQuickDownload}
-          onPress={onDownload}
-        >
-          <Ionicons name="download-outline" size={18} color={theme.primary} />
-        </TouchableOpacity>
+        {allowDownloads && (
+          <TouchableOpacity
+            style={styles.photoQuickDownload}
+            onPress={onDownload}
+          >
+            <Ionicons name="download-outline" size={18} color={theme.primary} />
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -151,6 +193,70 @@ export default function FaceMatchResultsScreen() {
   const [statusMessage, setStatusMessage] = useState<string>("Loading event photos...");
   const [selectedPhoto, setSelectedPhoto] = useState<DisplayPhoto | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Download Security & Watermark settings
+  const [allowDownloads, setAllowDownloads] = useState<boolean>(false);
+  const [watermarkUrl, setWatermarkUrl] = useState<string | null>(null);
+  const [screenshotNotice, setScreenshotNotice] = useState<boolean>(false);
+
+  // Anti-screenshot, anti-right-click, and print protection when downloads are disabled
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+
+    const preventContextMenu = (e: MouseEvent) => {
+      if (!allowDownloads) {
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (allowDownloads) return;
+
+      const isPrintScreen =
+        e.key === "PrintScreen" || e.code === "PrintScreen" || (e as any).keyCode === 44;
+      const isMacCapture =
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        (e.key === "3" ||
+          e.key === "4" ||
+          e.key === "5" ||
+          e.code === "Digit3" ||
+          e.code === "Digit4" ||
+          e.code === "Digit5");
+      const isWinSnip =
+        (e.key === "S" || e.key === "s") && (e.metaKey || (e.ctrlKey && e.shiftKey));
+
+      if (isPrintScreen || isMacCapture || isWinSnip) {
+        try {
+          e.preventDefault();
+        } catch {}
+        setScreenshotNotice(true);
+        setTimeout(() => setScreenshotNotice(false), 3000);
+      }
+    };
+
+    let printStyleTag: HTMLStyleElement | null = null;
+    if (!allowDownloads) {
+      printStyleTag = document.createElement("style");
+      printStyleTag.innerHTML = `
+        @media print {
+          body { display: none !important; }
+        }
+      `;
+      document.head.appendChild(printStyleTag);
+    }
+
+    window.addEventListener("contextmenu", preventContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("contextmenu", preventContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+      if (printStyleTag && printStyleTag.parentNode) {
+        printStyleTag.parentNode.removeChild(printStyleTag);
+      }
+    };
+  }, [allowDownloads]);
 
   // Sync new route selfie when passed
   useEffect(() => {
@@ -281,6 +387,8 @@ export default function FaceMatchResultsScreen() {
       const galleryResult = await fetchLiveEventGallery(eventId, currentEvent.type);
       setEventInfo(galleryResult.event);
       setAllPhotos(galleryResult.photos);
+      setAllowDownloads(galleryResult.allowDownloads ?? false);
+      setWatermarkUrl(galleryResult.watermarkUrl ?? null);
 
       const photos = galleryResult.photos;
 
@@ -435,6 +543,15 @@ export default function FaceMatchResultsScreen() {
   const displayedPhotos = viewTab === "matched" ? matchedPhotos : allPhotos;
 
   const handleDownloadSingle = (photo: DisplayPhoto) => {
+    if (!allowDownloads) {
+      Alert.alert(
+        language === "मराठी" ? "डाउनलोड बंद आहे" : "Downloads Disabled",
+        language === "मराठी"
+          ? "या इव्हेंटसाठी स्टुडिओद्वारे डाउनलोड बंद केले आहे."
+          : "Photo downloads have been disabled by the studio for this event."
+      );
+      return;
+    }
     const downloadUrl = photo.url || photo.thumbnailUrl;
     if (Platform.OS === "web" && typeof window !== "undefined") {
       const a = document.createElement("a");
@@ -450,7 +567,7 @@ export default function FaceMatchResultsScreen() {
   };
 
   const handleDownloadAll = () => {
-    if (matchedPhotos.length === 0) return;
+    if (!allowDownloads || matchedPhotos.length === 0) return;
     matchedPhotos.forEach((photo, idx) => {
       setTimeout(() => {
         handleDownloadSingle(photo);
@@ -740,7 +857,7 @@ export default function FaceMatchResultsScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                {matchedPhotos.length > 0 && (
+                {matchedPhotos.length > 0 && allowDownloads && (
                   <TouchableOpacity
                     style={[styles.albumActionBtnPrimary, { backgroundColor: theme.primary }]}
                     onPress={handleDownloadAll}
@@ -750,6 +867,23 @@ export default function FaceMatchResultsScreen() {
                       {t.downloadAll}
                     </Text>
                   </TouchableOpacity>
+                )}
+
+                {matchedPhotos.length > 0 && !allowDownloads && (
+                  <View
+                    style={[
+                      styles.downloadProtectedPill,
+                      {
+                        borderColor: `${theme.primary}40`,
+                        backgroundColor: `${theme.primary}12`,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="shield-checkmark" size={14} color={theme.primary} />
+                    <Text style={[styles.downloadProtectedText, { color: theme.text }]}>
+                      {language === "मराठी" ? "संरक्षित फोटो (डाउनलोड बंद)" : "Protected (Downloads Off)"}
+                    </Text>
+                  </View>
                 )}
               </View>
             </View>
@@ -818,6 +952,8 @@ export default function FaceMatchResultsScreen() {
                 key={photo.id}
                 photo={photo}
                 theme={theme}
+                allowDownloads={allowDownloads}
+                watermarkUrl={watermarkUrl}
                 onSelect={() => setSelectedPhoto(photo)}
                 onDownload={() => handleDownloadSingle(photo)}
               />
@@ -858,13 +994,53 @@ export default function FaceMatchResultsScreen() {
               <View style={{ width: 40 }} />
             </View>
 
-            {/* HIGH-RES IMAGE */}
-            <View style={styles.modalImageWrap}>
+            {/* HIGH-RES IMAGE WITH WATERMARK OVERLAY */}
+            <View
+              style={styles.modalImageWrap}
+              {...(Platform.OS === "web"
+                ? {
+                    onContextMenu: (e: any) => {
+                      if (!allowDownloads) {
+                        e.preventDefault?.();
+                        e.stopPropagation?.();
+                      }
+                    },
+                  }
+                : {})}
+            >
               <Image
                 source={{ uri: selectedPhoto.url || selectedPhoto.thumbnailUrl }}
                 style={styles.modalImage}
                 resizeMode="contain"
               />
+
+              {/* WATERMARK OVERLAY IN FULLSCREEN PREVIEW */}
+              {!allowDownloads && (
+                <View style={styles.modalWatermarkOverlay} pointerEvents="none">
+                  {watermarkUrl ? (
+                    <View style={styles.modalStudioWatermarkCard}>
+                      <Image
+                        source={{ uri: watermarkUrl }}
+                        style={styles.modalStudioWatermarkImg}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.modalStudioWatermarkName}>
+                        {eventInfo?.studioName || activeEvent?.studioName || "PhotoOS Studio"}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.modalSystemWatermarkCard}>
+                      <Image
+                        source={require("../../../assets/PhotoOS-brand-master.png")}
+                        style={styles.modalSystemWatermarkLogo}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.modalSystemWatermarkText}>PhotoOS</Text>
+                      <Text style={styles.modalSystemWatermarkSub}>Protected Preview</Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* ACTION BUTTONS */}
@@ -877,16 +1053,30 @@ export default function FaceMatchResultsScreen() {
                 <Text style={styles.modalBtnTextSec}>Share</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.modalActionBtnPrimary, { backgroundColor: theme.primary }]}
-                onPress={() => handleDownloadSingle(selectedPhoto)}
-              >
-                <Ionicons name="download-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.modalBtnTextPrim}>{t.downloadHd}</Text>
-              </TouchableOpacity>
+              {allowDownloads && (
+                <TouchableOpacity
+                  style={[styles.modalActionBtnPrimary, { backgroundColor: theme.primary }]}
+                  onPress={() => handleDownloadSingle(selectedPhoto)}
+                >
+                  <Ionicons name="download-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.modalBtnTextPrim}>{t.downloadHd}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </Modal>
+      )}
+
+      {/* SCREENSHOT WARNING TOAST */}
+      {screenshotNotice && (
+        <View style={styles.screenshotWarningToast}>
+          <Ionicons name="shield" size={18} color="#FFFFFF" />
+          <Text style={styles.screenshotWarningText}>
+            {language === "मराठी"
+              ? "⚠️ स्क्रीनशॉट प्रतिबंधित आहे (Protected Event)"
+              : "⚠️ Screenshots are disabled for protected photos."}
+          </Text>
+        </View>
       )}
     </View>
   );
@@ -1339,5 +1529,145 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  thumbnailWatermarkOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 4,
+  },
+  watermarkStudioBadge: {
+    backgroundColor: "rgba(0,0,0,0.40)",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    transform: [{ rotate: "-15deg" }],
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  watermarkStudioThumbImg: {
+    width: 65,
+    height: 25,
+    opacity: 0.85,
+  },
+  watermarkSystemBadge: {
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    transform: [{ rotate: "-15deg" }],
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  watermarkSystemThumbLogo: {
+    width: 14,
+    height: 14,
+  },
+  watermarkSystemThumbText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  modalWatermarkOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 6,
+  },
+  modalStudioWatermarkCard: {
+    backgroundColor: "rgba(0,0,0,0.52)",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    transform: [{ rotate: "-18deg" }],
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.30)",
+  },
+  modalStudioWatermarkImg: {
+    width: 140,
+    height: 50,
+    opacity: 0.9,
+  },
+  modalStudioWatermarkName: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  modalSystemWatermarkCard: {
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    transform: [{ rotate: "-18deg" }],
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.30)",
+  },
+  modalSystemWatermarkLogo: {
+    width: 44,
+    height: 44,
+    marginBottom: 4,
+  },
+  modalSystemWatermarkText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+  },
+  modalSystemWatermarkSub: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 2,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  downloadProtectedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  downloadProtectedText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  screenshotWarningToast: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    right: 20,
+    zIndex: 99999,
+    backgroundColor: "#FF3B30",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  screenshotWarningText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
   },
 });

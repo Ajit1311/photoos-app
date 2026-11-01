@@ -33,6 +33,8 @@ export interface LiveGalleryResult {
   success: boolean;
   event: LiveEventInfo;
   photos: LiveEventPhoto[];
+  allowDownloads?: boolean;
+  watermarkUrl?: string | null;
   error?: string;
 }
 
@@ -84,6 +86,8 @@ export async function fetchLiveEventGallery(
     normalizedId.startsWith("corp_");
 
   let fetchedPhotos: LiveEventPhoto[] = [];
+  let allowDownloads = false;
+  let watermarkUrl: string | null = null;
   let eventInfo: LiveEventInfo = {
     id: normalizedId,
     name: isCorporate ? "Corporate Celebration" : "Live Event Gallery",
@@ -109,6 +113,14 @@ export async function fetchLiveEventGallery(
 
       if (corpRes.ok) {
         const corpData = await corpRes.json();
+        if (typeof corpData?.allowDownloads === "boolean") {
+          allowDownloads = corpData.allowDownloads;
+        } else {
+          allowDownloads = true;
+        }
+        if (corpData?.watermarkUrl) {
+          watermarkUrl = normalizeMediaUrl(corpData.watermarkUrl);
+        }
         if (corpData?.success && Array.isArray(corpData.photos)) {
           fetchedPhotos = corpData.photos.map((cp: any, idx: number) => {
             const rawUrl = cp.url || cp.thumbnail_url;
@@ -136,6 +148,8 @@ export async function fetchLiveEventGallery(
       success: true,
       event: eventInfo,
       photos: fetchedPhotos,
+      allowDownloads,
+      watermarkUrl,
     };
   }
 
@@ -158,6 +172,12 @@ export async function fetchLiveEventGallery(
     if (galleryRes.ok) {
       const data = await galleryRes.json();
       if (data?.success) {
+        if (typeof data?.allowDownloads === "boolean") {
+          allowDownloads = data.allowDownloads;
+        }
+        if (data?.watermarkUrl) {
+          watermarkUrl = normalizeMediaUrl(data.watermarkUrl);
+        }
         if (data?.event?.name) eventInfo.name = data.event.name;
         if (data?.studio?.name) eventInfo.studioName = data.studio.name;
         if (data?.studio?.id) eventInfo.studioId = data.studio.id;
@@ -188,5 +208,7 @@ export async function fetchLiveEventGallery(
     success: true,
     event: eventInfo,
     photos: fetchedPhotos,
+    allowDownloads,
+    watermarkUrl,
   };
 }
