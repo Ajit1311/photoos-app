@@ -3,6 +3,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -25,6 +26,59 @@ import { useAppSettings } from "../../context/AppSettingsContext";
 import { getActiveEventContextSync } from "../../services/event-gallery/event-qr-detector";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+/**
+ * Downscales high-resolution selfies into an ultra-fast ~60KB jpeg data URI.
+ * Prevents mobile browser memory exhaustion (out-of-memory reload) and QuotaExceededError.
+ */
+async function downscaleSelfieWeb(uriOrVideo: string | HTMLVideoElement, mirror = false): Promise<string> {
+  if (Platform.OS !== "web" || typeof document === "undefined") {
+    return typeof uriOrVideo === "string" ? uriOrVideo : "";
+  }
+  return new Promise((resolve) => {
+    const canvas = document.createElement("canvas");
+    const MAX_DIM = 640;
+
+    const process = (img: HTMLImageElement | HTMLVideoElement) => {
+      const w = "videoWidth" in img ? img.videoWidth : img.naturalWidth || img.width;
+      const h = "videoHeight" in img ? img.videoHeight : img.naturalHeight || img.height;
+      if (!w || !h) {
+        resolve(typeof uriOrVideo === "string" ? uriOrVideo : "");
+        return;
+      }
+      const scale = Math.min(MAX_DIM / w, MAX_DIM / h, 1.0);
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(typeof uriOrVideo === "string" ? uriOrVideo : "");
+        return;
+      }
+      if (mirror) {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUri = canvas.toDataURL("image/jpeg", 0.82);
+      canvas.width = 0;
+      canvas.height = 0;
+      resolve(dataUri);
+    };
+
+    if (typeof uriOrVideo === "string") {
+      const img = typeof window !== "undefined" && (window as any).Image ? new (window as any).Image() : null;
+      if (!img) {
+        resolve(uriOrVideo);
+        return;
+      }
+      img.onload = () => process(img);
+      img.onerror = () => resolve(uriOrVideo);
+      img.src = uriOrVideo;
+    } else {
+      process(uriOrVideo);
+    }
+  });
+}
 
 export default function CameraScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -90,33 +144,73 @@ export default function CameraScreen() {
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.9,
+      quality: 0.85,
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      startFaceMatching(result.assets[0].uri);
+      const safeUri = await downscaleSelfieWeb(result.assets[0].uri);
+      startFaceMatching(safeUri);
     }
   };
 
-  const handleCapture = async () => {
-    if (!cameraRef) return;
+  const handleCapture = async (e?: any) => {
+    if (e && typeof e.preventDefault === "function") {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     try {
-      const photo = await cameraRef.takePictureAsync({
-        quality: 0.9,
-      });
+      let capturedUri: string | null = null;
 
-      if (photo?.uri) {
-        setCameraOpen(false);
-        startFaceMatching(photo.uri);
+      // 1. Direct Web Video frame capture (lightning fast, zero lag, avoids Expo Camera crashes on mobile web)
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        const video = document.querySelector("video");
+        if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+          try {
+            capturedUri = await downscaleSelfieWeb(video, cameraType === "front");
+          } catch (vidErr) {
+            console.warn("[CameraScreen] Video snapshot failed, falling back to cameraRef:", vidErr);
+          }
+        }
       }
-    } catch {
+
+      // 2. Fallback to cameraRef.takePictureAsync
+      if (!capturedUri && cameraRef) {
+        const photo = await cameraRef.takePictureAsync({
+          quality: 0.8,
+        });
+
+        if (photo?.uri) {
+          capturedUri = await downscaleSelfieWeb(photo.uri);
+        }
+      }
+
+      if (capturedUri) {
+        setCameraOpen(false);
+        startFaceMatching(capturedUri);
+      } else {
+        Alert.alert("Camera", "Unable to capture the photo. Please try again.");
+      }
+    } catch (err) {
+      console.error("[CameraScreen] Capture error:", err);
       Alert.alert("Camera", "Unable to capture the photo. Please try again.");
     }
   };
 
   const startFaceMatching = (uri: string) => {
     setPreviewUri(uri);
+
+    // Persist immediately in sessionStorage so accidental browser refreshes never lose the selfie
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("@photoos_last_selfie_v2", uri);
+        if (activeEvent?.eventId) {
+          sessionStorage.setItem(`@photoos_last_selfie_${activeEvent.eventId}`, uri);
+        }
+      } catch (err) {
+        console.warn("[CameraScreen] Storage save warning:", err);
+      }
+    }
 
     navigation.navigate("FaceMatchResults", {
       selfieUri: uri,

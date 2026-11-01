@@ -111,9 +111,6 @@ export async function loadFaceRecognitionModels(): Promise<boolean> {
         faceapi.nets.faceRecognitionNet.loadFromUri(CDN_MODEL_PATH),
       ]);
 
-      // Optional enhancement for complex multi-face group shots
-      faceapi.nets.ssdMobilenetv1.loadFromUri(CDN_MODEL_PATH).catch(() => {});
-
       modelsLoaded = true;
       console.log("[FaceRecognition] AI Models loaded successfully!");
       return true;
@@ -215,11 +212,11 @@ export function loadImageElement(source: string | HTMLImageElement): Promise<HTM
 }
 
 /**
- * Optimizes an image onto a maximum 1024px canvas for ultra fast inference
+ * Optimizes an image onto a maximum 480px canvas for ultra fast mobile-safe inference
  */
 export function createOptimizedFaceCanvas(
   img: HTMLImageElement,
-  maxDimension = 1024
+  maxDimension = 480
 ): HTMLCanvasElement | HTMLImageElement {
   if (typeof document === "undefined") return img;
   const w = img.naturalWidth || img.width;
@@ -272,13 +269,18 @@ export async function extractSelfieFaceDescriptor(
     };
   }
 
+  let canvasEl: HTMLCanvasElement | null = null;
   try {
-    const img = await loadImageElement(imageSource);
+    const rawImg = await loadImageElement(imageSource);
+    const img = createOptimizedFaceCanvas(rawImg, 480);
+    if (img instanceof HTMLCanvasElement) {
+      canvasEl = img;
+    }
 
-    // 1. Try TinyFaceDetector with higher input resolution
+    // 1. TinyFaceDetector with balanced mobile resolution
     const tinyOptions = new faceapi.TinyFaceDetectorOptions({
-      inputSize: 512,
-      scoreThreshold: 0.28,
+      inputSize: 416,
+      scoreThreshold: 0.22,
     });
 
     let detections = await faceapi
@@ -286,26 +288,15 @@ export async function extractSelfieFaceDescriptor(
       .withFaceLandmarks()
       .withFaceDescriptors();
 
-    // 2. Fallback: try smaller input size for angled / smaller faces
+    // 2. Fallback: try smaller input size for angled / distant faces
     if (detections.length === 0) {
       try {
         const fallbackTiny = new faceapi.TinyFaceDetectorOptions({
           inputSize: 320,
-          scoreThreshold: 0.20,
+          scoreThreshold: 0.16,
         });
         detections = await faceapi
           .detectAllFaces(img, fallbackTiny)
-          .withFaceLandmarks()
-          .withFaceDescriptors();
-      } catch {}
-    }
-
-    // 3. SSD MobileNet fallback if no face was found
-    if (detections.length === 0 && faceapi.nets.ssdMobilenetv1?.isLoaded) {
-      try {
-        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.22 });
-        detections = await faceapi
-          .detectAllFaces(img, ssdOptions)
           .withFaceLandmarks()
           .withFaceDescriptors();
       } catch {}
@@ -344,6 +335,11 @@ export async function extractSelfieFaceDescriptor(
       faceCount: 0,
       error: err?.message || "Failed to analyze selfie.",
     };
+  } finally {
+    if (canvasEl) {
+      canvasEl.width = 0;
+      canvasEl.height = 0;
+    }
   }
 }
 
@@ -359,13 +355,17 @@ export async function extractPhotoFacesDescriptors(
   const faceapi = await getFaceApi();
   if (!faceapi) return [];
 
+  let canvasEl: HTMLCanvasElement | null = null;
   try {
     const rawImg = await loadImageElement(imageSource);
-    const img = createOptimizedFaceCanvas(rawImg, 1024);
+    const img = createOptimizedFaceCanvas(rawImg, 480);
+    if (img instanceof HTMLCanvasElement) {
+      canvasEl = img;
+    }
 
     const tinyOptions = new faceapi.TinyFaceDetectorOptions({
-      inputSize: 512,
-      scoreThreshold: 0.25,
+      inputSize: 416,
+      scoreThreshold: 0.20,
     });
 
     let detections = await faceapi
@@ -377,20 +377,10 @@ export async function extractPhotoFacesDescriptors(
       try {
         const fallbackTiny = new faceapi.TinyFaceDetectorOptions({
           inputSize: 320,
-          scoreThreshold: 0.18,
+          scoreThreshold: 0.16,
         });
         detections = await faceapi
           .detectAllFaces(img, fallbackTiny)
-          .withFaceLandmarks()
-          .withFaceDescriptors();
-      } catch {}
-    }
-
-    if (detections.length === 0 && faceapi.nets.ssdMobilenetv1?.isLoaded) {
-      try {
-        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.20 });
-        detections = await faceapi
-          .detectAllFaces(img, ssdOptions)
           .withFaceLandmarks()
           .withFaceDescriptors();
       } catch {}
@@ -409,6 +399,11 @@ export async function extractPhotoFacesDescriptors(
   } catch (err) {
     console.warn("[FaceRecognition] Could not extract photo faces:", err);
     return [];
+  } finally {
+    if (canvasEl) {
+      canvasEl.width = 0;
+      canvasEl.height = 0;
+    }
   }
 }
 

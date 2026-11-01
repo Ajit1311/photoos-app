@@ -121,7 +121,21 @@ export default function FaceMatchResultsScreen() {
   const insets = useSafeAreaInsets();
   const { theme, language } = useAppSettings();
 
-  const selfieUri = route.params?.selfieUri as string | undefined;
+  const routeSelfie = route.params?.selfieUri as string | undefined;
+
+  // Persist and restore selfieUri from sessionStorage across page reloads
+  const [selfieUri, setSelfieUri] = useState<string | undefined>(() => {
+    if (routeSelfie) return routeSelfie;
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      try {
+        const stored = sessionStorage.getItem("@photoos_last_selfie_v2");
+        return stored || undefined;
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  });
 
   const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(() =>
     getActiveEventContextSync()
@@ -138,14 +152,46 @@ export default function FaceMatchResultsScreen() {
   const [selectedPhoto, setSelectedPhoto] = useState<DisplayPhoto | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Sync new route selfie when passed
+  useEffect(() => {
+    if (route.params?.selfieUri) {
+      setSelfieUri(route.params.selfieUri);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("@photoos_last_selfie_v2", route.params.selfieUri);
+        } catch {}
+      }
+    }
+  }, [route.params?.selfieUri]);
+
+  // Restore previous matched results from storage if already computed for this event
+  useEffect(() => {
+    const currentEventId = route.params?.eventId || activeEvent?.eventId;
+    if (Platform.OS === "web" && typeof window !== "undefined" && currentEventId) {
+      try {
+        const cached = sessionStorage.getItem(`@photoos_matched_${currentEventId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMatchedPhotos(parsed);
+            setViewTab("matched");
+          }
+        }
+      } catch {}
+    }
+  }, [route.params?.eventId, activeEvent?.eventId]);
+
   // Localization strings
   const t = useMemo(() => {
     if (language === "मराठी") {
       return {
-        matchedTab: "माझे मॅच झालेले फोटो",
-        allTab: "सर्व इव्हेंट फोटो",
+        matchedTab: "📁 माझा अल्बम",
+        allTab: "🌐 सर्व इव्हेंट फोटो",
+        albumHeading: "माझा फोटो अल्बम (Personal Album)",
+        albumSub: "AI द्वारे तुमच्या चेहऱ्याशी तंतोतंत मॅच झालेले सर्व फोटो या सेपरेट अल्बममध्ये सुरक्षित ठेवले आहेत.",
+        downloadAll: "सर्व फोटो डाउनलोड करा",
         scanningTitle: "AI फेस रेकग्निशन चालू आहे",
-        scanningSelfie: "तुमच्या सेल्फीमधील चेहरा स्कॅन करत आहे...",
+        scanningSelfie: "तुमच्या चेहऱ्याची बायोमेट्रिक तपासणी करत आहे...",
         matchingPhotos: "इव्हेंटच्या फोटोंमधून तुमचे फोटो शोधत आहे...",
         foundMatches: "फोटो मॅच झाले (99% अचूकता)",
         noMatches: "तुमच्या चेहऱ्याचे कोणतेही फोटो सापडले नाहीत",
@@ -162,8 +208,11 @@ export default function FaceMatchResultsScreen() {
     }
     if (language === "हिन्दी") {
       return {
-        matchedTab: "मेरे मैच हुए फोटो",
-        allTab: "सभी इवेंट फोटो",
+        matchedTab: "📁 मेरा एल्बम",
+        allTab: "🌐 सभी इवेंट फोटो",
+        albumHeading: "मेरा फोटो एल्बम (Personal Album)",
+        albumSub: "AI द्वारा आपके चेहरे से मैच किए गए सभी फोटो इस सेपरेट एल्बम में सुरक्षित हैं।",
+        downloadAll: "सभी फोटो डाउनलोड करें",
         scanningTitle: "AI फेस रिकग्निशन जारी है",
         scanningSelfie: "आपकी सेल्फी में चेहरा स्कैन हो रहा है...",
         matchingPhotos: "इवेंट फोटो से आपकी तस्वीरें खोजी जा रही हैं...",
@@ -181,8 +230,11 @@ export default function FaceMatchResultsScreen() {
       };
     }
     return {
-      matchedTab: "My Matched Photos",
-      allTab: "All Event Photos",
+      matchedTab: "📁 My Album",
+      allTab: "🌐 All Photos",
+      albumHeading: "My Matched Photo Album",
+      albumSub: "All photos matching your face biometric have been organized into your private personal album.",
+      downloadAll: "Download All Photos",
       scanningTitle: "AI Face Recognition in Progress",
       scanningSelfie: "Detecting biometric features from your selfie...",
       matchingPhotos: "Matching your face against event photos...",
@@ -232,7 +284,13 @@ export default function FaceMatchResultsScreen() {
 
       const photos = galleryResult.photos;
 
-      if (!selfieUri) {
+      // Check current selfieUri
+      let currentSelfie = selfieUri;
+      if (!currentSelfie && Platform.OS === "web" && typeof window !== "undefined") {
+        currentSelfie = sessionStorage.getItem("@photoos_last_selfie_v2") || undefined;
+      }
+
+      if (!currentSelfie) {
         // Direct event access or browse: show all photos immediately
         setViewTab("all");
         setMatchingState("done");
@@ -245,7 +303,23 @@ export default function FaceMatchResultsScreen() {
         return;
       }
 
-      // Step 2: Initialize AI models
+      // Check if we already have matched photos cached in storage
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        try {
+          const cached = sessionStorage.getItem(`@photoos_matched_${eventId}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMatchedPhotos(parsed);
+              setViewTab("matched");
+              setMatchingState("done");
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      // Step 2: Initialize lightweight AI models
       setMatchingState("loading_ai");
       setStatusMessage("Loading ResNet-34 AI Face Recognition engine...");
       await loadFaceRecognitionModels();
@@ -253,7 +327,7 @@ export default function FaceMatchResultsScreen() {
       // Step 3: Extract face descriptor from selfie
       setMatchingState("scanning_selfie");
       setStatusMessage(t.scanningSelfie);
-      const selfieResult = await extractSelfieFaceDescriptor(selfieUri);
+      const selfieResult = await extractSelfieFaceDescriptor(currentSelfie);
 
       if (!selfieResult.success || !selfieResult.descriptor) {
         setMatchingState("no_face_in_selfie");
@@ -262,49 +336,61 @@ export default function FaceMatchResultsScreen() {
 
       const selfieDescriptor = selfieResult.descriptor;
 
-      // Step 4: Scan and match each photo in the event
+      // Step 4: Scan and match each photo sequentially (lightweight, zero WebGL crash)
       setMatchingState("matching");
       const matchedList: DisplayPhoto[] = [];
-      const CHUNK_SIZE = 3;
 
-      for (let i = 0; i < photos.length; i += CHUNK_SIZE) {
-        const chunk = photos.slice(i, i + CHUNK_SIZE);
-        const progressCount = Math.min(i + chunk.length, photos.length);
-        setStatusMessage(`${t.matchingPhotos} (${progressCount}/${photos.length})`);
-
-        await Promise.all(
-          chunk.map(async (photo) => {
-            const photoUrl = photo.thumbnailUrl || photo.url;
-            if (!photoUrl) return;
-
-            try {
-              const photoFaces = await extractPhotoFacesDescriptors(photoUrl);
-              if (photoFaces.length > 0) {
-                const match = compareTargetFace(
-                  selfieDescriptor,
-                  photoFaces.map((f) => f.descriptor),
-                  MATCH_THRESHOLD
-                );
-
-                if (match.isMatch) {
-                  matchedList.push({
-                    ...photo,
-                    confidence: match.similarity,
-                    isMatch: true,
-                  });
-                }
-              }
-            } catch (scanErr) {
-              console.warn("[FaceMatch] Could not analyze photo:", photo.id, scanErr);
-            }
-          })
+      for (let i = 0; i < photos.length; i++) {
+        const photo = photos[i];
+        const progressCount = i + 1;
+        setStatusMessage(
+          language === "मराठी"
+            ? `तुमचे फोटो शोधत आहे... (${progressCount}/${photos.length} फोटो)`
+            : language === "हिन्दी"
+              ? `तस्वीरें खोजी जा रही हैं... (${progressCount}/${photos.length} फोटो)`
+              : `Matching your face against event photos... (${progressCount}/${photos.length})`
         );
+
+        const photoUrl = photo.thumbnailUrl || photo.url;
+        if (photoUrl) {
+          try {
+            const photoFaces = await extractPhotoFacesDescriptors(photoUrl);
+            if (photoFaces.length > 0) {
+              const match = compareTargetFace(
+                selfieDescriptor,
+                photoFaces.map((f) => f.descriptor),
+                MATCH_THRESHOLD
+              );
+
+              if (match.isMatch) {
+                const item: DisplayPhoto = {
+                  ...photo,
+                  confidence: match.similarity,
+                  isMatch: true,
+                };
+                matchedList.push(item);
+                // Dynamically update state so user sees matched photos appearing live in real time!
+                setMatchedPhotos([...matchedList]);
+              }
+            }
+          } catch (scanErr) {
+            console.warn("[FaceMatch] Could not analyze photo:", photo.id, scanErr);
+          }
+        }
+
+        // Cooperative 20ms yield to allow browser GC to free textures and keep UI silky smooth
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
 
       // Sort matched photos by highest confidence
       matchedList.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
       setMatchedPhotos(matchedList);
+      if (Platform.OS === "web" && typeof window !== "undefined" && eventId) {
+        try {
+          sessionStorage.setItem(`@photoos_matched_${eventId}`, JSON.stringify(matchedList));
+        } catch {}
+      }
       setViewTab(matchedList.length > 0 ? "matched" : "all");
       setMatchingState("done");
     } catch (err: any) {
@@ -312,16 +398,38 @@ export default function FaceMatchResultsScreen() {
       setViewTab("all");
       setMatchingState("done");
     }
-  }, [activeEvent, selfieUri, t]);
+  }, [activeEvent, selfieUri, t, language]);
 
   useEffect(() => {
     void loadGalleryAndMatch();
   }, [loadGalleryAndMatch]);
 
   const handleRefresh = async () => {
+    // Clear storage cache for fresh scan
+    const eventId = route.params?.eventId || activeEvent?.eventId;
+    if (Platform.OS === "web" && typeof window !== "undefined" && eventId) {
+      try {
+        sessionStorage.removeItem(`@photoos_matched_${eventId}`);
+      } catch {}
+    }
     setRefreshing(true);
     await loadGalleryAndMatch();
     setRefreshing(false);
+  };
+
+  const handleRetakeSelfie = () => {
+    // Clear last selfie and matched cache
+    const eventId = route.params?.eventId || activeEvent?.eventId;
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem("@photoos_last_selfie_v2");
+        if (eventId) {
+          sessionStorage.removeItem(`@photoos_last_selfie_${eventId}`);
+          sessionStorage.removeItem(`@photoos_matched_${eventId}`);
+        }
+      } catch {}
+    }
+    navigation.navigate("Main", { screen: "Camera" });
   };
 
   const displayedPhotos = viewTab === "matched" ? matchedPhotos : allPhotos;
@@ -339,6 +447,15 @@ export default function FaceMatchResultsScreen() {
     } else {
       Alert.alert("Download", "Downloading photo in original high quality...");
     }
+  };
+
+  const handleDownloadAll = () => {
+    if (matchedPhotos.length === 0) return;
+    matchedPhotos.forEach((photo, idx) => {
+      setTimeout(() => {
+        handleDownloadSingle(photo);
+      }, idx * 450);
+    });
   };
 
   const handleWhatsAppShare = (photo: DisplayPhoto) => {
@@ -571,7 +688,7 @@ export default function FaceMatchResultsScreen() {
             </View>
           )}
 
-          {/* SUMMARY BANNER */}
+          {/* PERSONAL MATCHED ALBUM BANNER */}
           {viewTab === "matched" && (
             <View
               style={[
@@ -599,31 +716,82 @@ export default function FaceMatchResultsScreen() {
                 <View style={styles.summaryTextGroup}>
                   <Text style={[styles.summaryHeading, { color: theme.text }]}>
                     {matchedPhotos.length > 0
-                      ? `${matchedPhotos.length} ${t.foundMatches}`
+                      ? `${t.albumHeading} (${matchedPhotos.length})`
                       : t.noMatches}
                   </Text>
                   <Text style={[styles.summaryDescription, { color: theme.textSecondary }]}>
                     {matchedPhotos.length > 0
-                      ? "Biometric face verification matched with ResNet-34 neural model."
-                      : "You can browse all event photos below or retake your selfie."}
+                      ? t.albumSub
+                      : (language === "मराठी"
+                          ? "तुम्ही 'सर्व इव्हेंट फोटो' टॅबमध्ये सर्व फोटो पाहू शकता किंवा नवीन सेल्फी घेऊ शकता."
+                          : "You can browse all event photos below or retake your selfie.")}
                   </Text>
                 </View>
               </View>
 
-              {matchedPhotos.length === 0 && (
+              <View style={styles.albumActionsRow}>
                 <TouchableOpacity
-                  style={[styles.takeSelfieButton, { backgroundColor: theme.primary }]}
-                  onPress={() => navigation.navigate("Main", { screen: "Camera" })}
+                  style={[styles.albumActionBtnOutline, { borderColor: theme.border, backgroundColor: theme.surface }]}
+                  onPress={handleRetakeSelfie}
                 >
-                  <Ionicons name="camera-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.takeSelfieText}>{t.retakeSelfie}</Text>
+                  <Ionicons name="camera-outline" size={16} color={theme.text} />
+                  <Text style={[styles.albumActionTextOutline, { color: theme.text }]}>
+                    {t.retakeSelfie}
+                  </Text>
                 </TouchableOpacity>
-              )}
+
+                {matchedPhotos.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.albumActionBtnPrimary, { backgroundColor: theme.primary }]}
+                    onPress={handleDownloadAll}
+                  >
+                    <Ionicons name="download-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.albumActionTextPrimary}>
+                      {t.downloadAll}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
 
-          {/* EMPTY GALLERY STATE */}
-          {displayedPhotos.length === 0 && (
+          {/* EMPTY MATCHED ALBUM STATE */}
+          {viewTab === "matched" && matchedPhotos.length === 0 && (
+            <View style={[styles.emptyContainer, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+              <Ionicons name="person-outline" size={54} color={theme.textMuted} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                {t.noMatches}
+              </Text>
+              <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
+                {language === "मराठी"
+                  ? "तुमच्या चेहऱ्याशी जुळणारे फोटो या इव्हेंटमध्ये आढळले नाहीत. तुम्ही सर्व इव्हेंट फोटो पाहू शकता किंवा योग्य प्रकाशात नवीन सेल्फी घेऊ शकता."
+                  : "No matching photos found for your face yet. You can browse all event photos or take a clearer selfie."}
+              </Text>
+
+              <View style={styles.emptyActionRow}>
+                <TouchableOpacity
+                  style={[styles.emptyBtnPrimary, { backgroundColor: theme.primary }]}
+                  onPress={handleRetakeSelfie}
+                >
+                  <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.emptyBtnTextWhite}>{t.retakeSelfie}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.emptyBtnOutline, { borderColor: theme.border }]}
+                  onPress={() => setViewTab("all")}
+                >
+                  <Ionicons name="images-outline" size={16} color={theme.text} />
+                  <Text style={[styles.emptyBtnTextDark, { color: theme.text }]}>
+                    {t.browseAll}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* EMPTY ALL GALLERY STATE */}
+          {viewTab === "all" && allPhotos.length === 0 && (
             <View style={[styles.emptyContainer, { borderColor: theme.border, backgroundColor: theme.surface }]}>
               <Ionicons name="images-outline" size={54} color={theme.textMuted} />
               <Text style={[styles.emptyTitle, { color: theme.text }]}>
@@ -842,6 +1010,76 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     marginTop: 2,
     lineHeight: 16,
+  },
+  albumActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 8,
+  },
+  albumActionBtnOutline: {
+    flex: 1,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  albumActionTextOutline: {
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  albumActionBtnPrimary: {
+    flex: 1.4,
+    height: 40,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  albumActionTextPrimary: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  emptyActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+    width: "100%",
+  },
+  emptyBtnPrimary: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  emptyBtnTextWhite: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  emptyBtnOutline: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  emptyBtnTextDark: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   takeSelfieButton: {
     flexDirection: "row",

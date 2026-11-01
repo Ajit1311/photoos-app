@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import {
   getClientAlbums,
   type ClientAlbum,
 } from "../../services/client-app/client-app.service";
+import { getActiveEventContextSync } from "../../services/event-gallery/event-qr-detector";
 
 export default function ClientAlbumsScreen() {
   const navigation =
@@ -26,10 +28,33 @@ export default function ClientAlbumsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [activeEventMatchedCount, setActiveEventMatchedCount] = useState<number>(0);
+  const [activeEventObj, setActiveEventObj] = useState<any>(null);
+
+  const checkLocalMatchedAlbum = useCallback(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      try {
+        const ev = getActiveEventContextSync();
+        if (ev?.eventId) {
+          setActiveEventObj(ev);
+          const cached = sessionStorage.getItem(`@photoos_matched_${ev.eventId}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setActiveEventMatchedCount(parsed.length);
+              return;
+            }
+          }
+        }
+        setActiveEventMatchedCount(0);
+      } catch {}
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
       setError("");
+      checkLocalMatchedAlbum();
       const response = await getClientAlbums();
       setAlbums(response.albums ?? []);
     } catch (err) {
@@ -38,7 +63,7 @@ export default function ClientAlbumsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [checkLocalMatchedAlbum]);
 
   useFocusEffect(
     useCallback(() => {
@@ -88,7 +113,50 @@ export default function ClientAlbumsScreen() {
             />
           }
         >
-          {albums.length === 0 ? (
+          {/* AI MATCHED ALBUM CARD */}
+          {activeEventMatchedCount > 0 && (
+            <TouchableOpacity
+              style={[styles.card, { borderColor: colors.primary, backgroundColor: `${colors.primary}0F` }]}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate("FaceMatchResults", {})}
+            >
+              <View style={[styles.albumIcon, { backgroundColor: `${colors.primary}25` }]}>
+                <Ionicons
+                  name="sparkles"
+                  size={24}
+                  color={colors.primary}
+                />
+              </View>
+
+              <View style={styles.details}>
+                <Text style={[styles.albumTitle, { color: colors.primary }]} numberOfLines={1}>
+                  माझे मॅच झालेले फोटो • My Album
+                </Text>
+
+                <Text style={styles.description} numberOfLines={1}>
+                  {activeEventObj?.eventName || "Live Event"} ({activeEventMatchedCount} फोटो उपलब्ध)
+                </Text>
+
+                <View style={styles.meta}>
+                  <Text style={[styles.metaText, { color: colors.primary, fontWeight: "700" }]}>
+                    ✨ AI Face Matched Album
+                  </Text>
+                  <Text style={styles.dot}>•</Text>
+                  <Text style={[styles.metaText, { color: colors.teal, fontWeight: "600" }]}>
+                    Ready
+                  </Text>
+                </View>
+              </View>
+
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
+
+          {albums.length === 0 && activeEventMatchedCount === 0 ? (
             <View style={styles.center}>
               <Ionicons
                 name="images-outline"
