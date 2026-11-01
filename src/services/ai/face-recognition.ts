@@ -111,26 +111,14 @@ export async function loadFaceRecognitionModels(): Promise<boolean> {
         faceapi.nets.faceRecognitionNet.loadFromUri(CDN_MODEL_PATH),
       ]);
 
-      // Switch backend to CPU on iOS / Safari to prevent WebGL Metal GPU memory crashes
-      const isIOS =
-        typeof navigator !== "undefined" &&
-        (/iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
-          (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1));
-
-      if (faceapi.tf) {
-        if (isIOS) {
-          try {
-            await faceapi.tf.setBackend("cpu");
-            console.log("[FaceRecognition] iOS WebKit detected: using CPU backend for 100% stability");
-          } catch (backendErr) {
-            console.warn("[FaceRecognition] Could not switch to CPU backend:", backendErr);
-          }
-        }
-        if (faceapi.tf.env && typeof faceapi.tf.env().set === "function") {
-          try {
-            faceapi.tf.env().set("WEBGL_DELETE_TEXTURE_THRESHOLD", 0);
-          } catch {}
-        }
+      // Optimize WebGL GPU texture management for silky-smooth mobile performance
+      if (faceapi.tf?.env && typeof faceapi.tf.env().set === "function") {
+        try {
+          // Immediately purge GPU textures when intermediate tensors are disposed
+          faceapi.tf.env().set("WEBGL_DELETE_TEXTURE_THRESHOLD", 0);
+          // Use 16-bit float textures on mobile GPUs to halve memory usage
+          faceapi.tf.env().set("WEBGL_FORCE_F16_TEXTURES", true);
+        } catch {}
       }
 
       modelsLoaded = true;

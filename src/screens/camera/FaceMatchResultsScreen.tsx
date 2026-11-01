@@ -275,7 +275,9 @@ export default function FaceMatchResultsScreen() {
     const currentEventId = route.params?.eventId || activeEvent?.eventId;
     if (Platform.OS === "web" && typeof window !== "undefined" && currentEventId) {
       try {
-        const cached = sessionStorage.getItem(`@photoos_matched_${currentEventId}`);
+        const cached =
+          localStorage.getItem(`@photoos_matched_${currentEventId}`) ||
+          sessionStorage.getItem(`@photoos_matched_${currentEventId}`);
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -414,7 +416,9 @@ export default function FaceMatchResultsScreen() {
       // Check if we already have matched photos cached in storage
       if (Platform.OS === "web" && typeof window !== "undefined") {
         try {
-          const cached = sessionStorage.getItem(`@photoos_matched_${eventId}`);
+          const cached =
+            localStorage.getItem(`@photoos_matched_${eventId}`) ||
+            sessionStorage.getItem(`@photoos_matched_${eventId}`);
           if (cached) {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
@@ -425,19 +429,6 @@ export default function FaceMatchResultsScreen() {
             }
           }
         } catch {}
-
-        // Crash loop prevention check on iOS / Safari
-        const attemptKey = `@photoos_match_attempts_${eventId}`;
-        const attempts = Number(sessionStorage.getItem(attemptKey) || "0");
-        if (attempts >= 2) {
-          console.warn("[FaceMatchResults] Detected repeated matching attempts. Clearing cache to break loop.");
-          sessionStorage.removeItem("@photoos_last_selfie_v2");
-          sessionStorage.removeItem(attemptKey);
-          setViewTab("all");
-          setMatchingState("done");
-          return;
-        }
-        sessionStorage.setItem(attemptKey, String(attempts + 1));
       }
 
       // Step 2: Initialize lightweight AI models
@@ -509,15 +500,17 @@ export default function FaceMatchResultsScreen() {
       setMatchedPhotos(matchedList);
       if (Platform.OS === "web" && typeof window !== "undefined" && eventId) {
         try {
-          sessionStorage.setItem(`@photoos_matched_${eventId}`, JSON.stringify(matchedList));
-          sessionStorage.removeItem(`@photoos_match_attempts_${eventId}`);
+          const serialized = JSON.stringify(matchedList);
+          localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+          sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
         } catch {}
       }
-      setViewTab(matchedList.length > 0 ? "matched" : "all");
+      // ALWAYS keep the user on their dedicated personal matched album tab!
+      setViewTab("matched");
       setMatchingState("done");
     } catch (err: any) {
       console.error("[FaceMatchResults] Flow error:", err);
-      setViewTab("all");
+      setViewTab("matched");
       setMatchingState("done");
     }
   }, [activeEvent, selfieUri, t, language]);
@@ -531,6 +524,7 @@ export default function FaceMatchResultsScreen() {
     const eventId = route.params?.eventId || activeEvent?.eventId;
     if (Platform.OS === "web" && typeof window !== "undefined" && eventId) {
       try {
+        localStorage.removeItem(`@photoos_matched_${eventId}`);
         sessionStorage.removeItem(`@photoos_matched_${eventId}`);
       } catch {}
     }
@@ -544,9 +538,12 @@ export default function FaceMatchResultsScreen() {
     const eventId = route.params?.eventId || activeEvent?.eventId;
     if (Platform.OS === "web" && typeof window !== "undefined") {
       try {
+        localStorage.removeItem("@photoos_last_selfie_v2");
         sessionStorage.removeItem("@photoos_last_selfie_v2");
         if (eventId) {
+          localStorage.removeItem(`@photoos_last_selfie_${eventId}`);
           sessionStorage.removeItem(`@photoos_last_selfie_${eventId}`);
+          localStorage.removeItem(`@photoos_matched_${eventId}`);
           sessionStorage.removeItem(`@photoos_matched_${eventId}`);
         }
       } catch {}
