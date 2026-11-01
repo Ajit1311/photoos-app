@@ -178,7 +178,16 @@ export default function ConversationScreen() {
           .map(normalizeMessage)
           .filter(Boolean) as Message[];
 
-        setMessages(items);
+        setMessages((current) => {
+          if (!items || items.length === 0) {
+            return current;
+          }
+          const remoteIds = new Set(items.map((m) => m.id));
+          const pendingLocal = current.filter(
+            (m) => m.id.startsWith("local-") && !remoteIds.has(m.id),
+          );
+          return [...items, ...pendingLocal];
+        });
       } catch (error) {
         console.error(
           "[ClientChat] Failed to load messages:",
@@ -295,6 +304,17 @@ export default function ConversationScreen() {
     }
 
     let id = conversationId;
+    const tempId = `local-${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: trimmed,
+      senderId: null,
+      isMine: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Immediately display in chat
+    setMessages((current) => [...current, optimisticMessage]);
 
     try {
       setSending(true);
@@ -316,11 +336,11 @@ export default function ConversationScreen() {
       const data = asRecord(root.data);
 
       const sentId = String(
-        data.id ?? data.message_id ?? root.id ?? `local-${Date.now()}`,
+        data.id ?? data.message_id ?? root.id ?? tempId,
       ).trim();
 
       const sentCreatedAt = String(
-        data.created_at ?? root.created_at ?? new Date().toISOString(),
+        data.created_at ?? root.created_at ?? optimisticMessage.createdAt,
       );
 
       const sentMessage: Message = {
@@ -331,12 +351,9 @@ export default function ConversationScreen() {
         createdAt: sentCreatedAt,
       };
 
-      setMessages((current) => {
-        if (current.some((m) => m.id === sentMessage.id)) {
-          return current;
-        }
-        return [...current, sentMessage];
-      });
+      setMessages((current) =>
+        current.map((m) => (m.id === tempId ? sentMessage : m)),
+      );
 
       await loadMessages(id);
     } catch (err) {

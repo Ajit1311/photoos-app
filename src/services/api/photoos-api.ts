@@ -10,14 +10,25 @@ export async function photoosRequest<T>(
   functionName: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const token = await getSupabaseAccessToken();
-
-  if (!token) {
-    throw new Error("Supabase authentication required");
+  let token: string | null = null;
+  try {
+    token = await getSupabaseAccessToken();
+  } catch {
+    token = null;
   }
 
   const headers = new Headers(options.headers);
-  headers.set("Authorization", `Bearer ${token}`);
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+    if (anonKey && !headers.has("apikey")) {
+      headers.set("apikey", anonKey);
+    }
+  } else if (anonKey) {
+    headers.set("Authorization", `Bearer ${anonKey}`);
+    headers.set("apikey", anonKey);
+  }
 
   if (!headers.has("Content-Type") && options.body != null) {
     headers.set("Content-Type", "application/json");
