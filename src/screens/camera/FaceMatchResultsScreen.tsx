@@ -553,6 +553,22 @@ export default function FaceMatchResultsScreen() {
 
     const eventId = currentEvent.eventId;
 
+    // Crash loop prevention check on iOS / Safari
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const attemptKey = `@photoos_match_attempts_${eventId}`;
+      const attempts = Number(sessionStorage.getItem(attemptKey) || "0");
+      if (attempts >= 2) {
+        console.warn("[FaceMatchResults] Detected repeated matching attempts. Clearing cache to break loop.");
+        sessionStorage.removeItem("@photoos_last_selfie_v2");
+        sessionStorage.removeItem(attemptKey);
+        sessionStorage.removeItem("@photoos_matching_in_progress");
+        setViewTab("all");
+        setMatchingState("done");
+        return;
+      }
+      sessionStorage.setItem(attemptKey, String(attempts + 1));
+    }
+
     try {
       setMatchingState("loading_gallery");
       setStatusMessage("Connecting to PhotoOS live gallery...");
@@ -652,7 +668,8 @@ export default function FaceMatchResultsScreen() {
               const serialized = JSON.stringify(serverMatched);
               localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
               sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
-              sessionStorage.removeItem("@photoos_matching_in_progress");
+              sessionStorage.removeItem(`@photoos_match_attempts_${eventId}`);
+          sessionStorage.removeItem("@photoos_matching_in_progress");
             }
             setViewTab("matched");
             setMatchingState("done");
@@ -670,11 +687,28 @@ export default function FaceMatchResultsScreen() {
           (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "") ||
             (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1)));
 
+      const isIOS =
+        typeof navigator !== "undefined" &&
+        (/iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+          (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1));
+
       setMatchingState("matching");
       const matchedList: DisplayPhoto[] = [];
 
-      // Limit client-side processing count on mobile to prevent WebKit memory exhaustion
-      const maxScanPhotos = isMobile ? Math.min(photos.length, 12) : photos.length;
+      // On iOS Safari WebKit, skip heavy client tensor iteration to completely prevent Jetsam memory crashes
+      if (isIOS) {
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          sessionStorage.removeItem(`@photoos_match_attempts_${eventId}`);
+          sessionStorage.removeItem(`@photoos_match_attempts_${eventId}`);
+          sessionStorage.removeItem("@photoos_matching_in_progress");
+        }
+        setViewTab(matchedList.length > 0 ? "matched" : "all");
+        setMatchingState("done");
+        return;
+      }
+
+      // Limit client-side processing count on other mobile to prevent WebKit memory exhaustion
+      const maxScanPhotos = isMobile ? Math.min(photos.length, 4) : photos.length;
 
       for (let i = 0; i < maxScanPhotos; i++) {
         const photo = photos[i];
@@ -731,6 +765,7 @@ export default function FaceMatchResultsScreen() {
           const serialized = JSON.stringify(matchedList);
           localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
           sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+          sessionStorage.removeItem(`@photoos_match_attempts_${eventId}`);
           sessionStorage.removeItem("@photoos_matching_in_progress");
         } catch {}
       }

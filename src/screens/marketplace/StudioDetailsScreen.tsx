@@ -476,9 +476,12 @@ export default function StudioDetailsScreen() {
 
   const [profile, setProfile] = useState<StudioDetailsData | null>(null);
   const [rawPayload, setRawPayload] = useState<unknown>(null);
+  const [studioPackages, setStudioPackages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const packagesSectionRef = useRef<View>(null);
 
   const loadProfile = useCallback(async () => {
     if (!studioId) {
@@ -495,6 +498,47 @@ export default function StudioDetailsScreen() {
 
       setRawPayload(response);
       setProfile(nextProfile);
+
+      // Load studio photography packages
+      try {
+        const pkgRes = await fetch(`https://app.photoos.in/api/marketplace/packages?studioId=${encodeURIComponent(studioId)}`);
+        if (pkgRes.ok) {
+          const pkgJson = await pkgRes.json().catch(() => null);
+          if (pkgJson?.success && Array.isArray(pkgJson.data) && pkgJson.data.length > 0) {
+            setStudioPackages(pkgJson.data);
+          } else {
+            setStudioPackages([
+              {
+                id: "pkg-1",
+                name: "Standard Wedding & Reception",
+                price: 25000,
+                delivery_days: 7,
+                description: "Full day professional event coverage with candid and traditional photos.",
+                features: ["Full Day Coverage", "Unlimited High-Res Photos", "AI Online Guest Gallery", "Digital Download Included"],
+              },
+              {
+                id: "pkg-2",
+                name: "Premium Cinematic & Drone Package",
+                price: 45000,
+                delivery_days: 5,
+                description: "Comprehensive 4K cinematography, drone aerials, and candid photography.",
+                features: ["2 Photographers + 1 Cinematographer", "4K Cinematic Teaser Film", "AI Face Match Instant Gallery", "Hardbound Premium Photo Book"],
+              },
+            ]);
+          }
+        }
+      } catch {
+        setStudioPackages([
+          {
+            id: "pkg-1",
+            name: "Standard Photography Package",
+            price: 20000,
+            delivery_days: 7,
+            description: "Complete professional coverage for your special day.",
+            features: ["High-Res Digital Photos", "Full Event Coverage", "AI Instant Gallery"],
+          },
+        ]);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -982,6 +1026,12 @@ export default function StudioDetailsScreen() {
           />
 
           <ActionButton
+            icon="cube-outline"
+            title="Packages"
+            onPress={handleChat}
+          />
+
+          <ActionButton
             icon="calendar-outline"
             title="Book Now"
             primary
@@ -1179,6 +1229,74 @@ export default function StudioDetailsScreen() {
                 }
               }}
             />
+          </View>
+        </InfoSection>
+
+        {/* PHOTOGRAPHY PACKAGES SECTION */}
+        <InfoSection title="Photography Packages (सेवा पॅकेजेस)">
+          <View style={{ gap: 12 }}>
+            {studioPackages.map((pkg: any) => (
+              <View
+                key={pkg.id || pkg.name}
+                style={[
+                  styles.detailsPkgCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <View style={styles.detailsPkgHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.detailsPkgTitle, { color: colors.text }]}>
+                      {pkg.name}
+                    </Text>
+                    <Text style={[styles.detailsPkgPrice, { color: colors.primary }]}>
+                      ₹{Number(pkg.price || 0).toLocaleString("en-IN")}
+                    </Text>
+                  </View>
+                  <View style={[styles.detailsPkgBadge, { backgroundColor: `${colors.primary}15` }]}>
+                    <Ionicons name="time-outline" size={13} color={colors.primary} />
+                    <Text style={[styles.detailsPkgBadgeText, { color: colors.primary }]}>
+                      {pkg.delivery_days || 7} days delivery
+                    </Text>
+                  </View>
+                </View>
+
+                {pkg.description ? (
+                  <Text style={[styles.detailsPkgDesc, { color: colors.textSecondary }]}>
+                    {pkg.description}
+                  </Text>
+                ) : null}
+
+                {Array.isArray(pkg.features) && pkg.features.length > 0 && (
+                  <View style={styles.detailsPkgFeatures}>
+                    {pkg.features.map((feat: string, fIdx: number) => (
+                      <View key={fIdx} style={styles.detailsPkgFeatureRow}>
+                        <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                        <Text style={[styles.detailsPkgFeatureText, { color: colors.text }]}>
+                          {feat}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.detailsPkgBookBtn, { backgroundColor: colors.primary }]}
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    navigation.getParent()?.navigate("Conversation", {
+                      studioId: profile.studio_id || profile.id || "",
+                      studioName: profile.studio_name || profile.name || "Studio",
+                      initialMessage: `Hi, I would like to book the '${pkg.name}' package (₹${Number(pkg.price || 0).toLocaleString("en-IN")})!`,
+                    });
+                  }}
+                >
+                  <Ionicons name="chatbubbles" size={15} color="#FFFFFF" />
+                  <Text style={styles.detailsPkgBookBtnText}>
+                    Book This Package / Chat
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         </InfoSection>
 
@@ -2194,5 +2312,68 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: colors.primary,
+  },
+  detailsPkgCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 8,
+  },
+  detailsPkgHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  detailsPkgTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  detailsPkgPrice: {
+    fontSize: 17,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  detailsPkgBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  detailsPkgBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  detailsPkgDesc: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  detailsPkgFeatures: {
+    gap: 6,
+    marginBottom: 14,
+  },
+  detailsPkgFeatureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  detailsPkgFeatureText: {
+    fontSize: 12.5,
+  },
+  detailsPkgBookBtn: {
+    height: 42,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  detailsPkgBookBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

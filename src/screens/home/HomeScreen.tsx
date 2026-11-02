@@ -112,10 +112,14 @@ export default function HomeScreen() {
         const next =
           current === sponsoredAds.length - 1 ? 0 : current + 1;
 
-        carouselRef.current?.scrollToOffset({
-          offset: next * carouselWidth,
-          animated: true,
-        });
+        setTimeout(() => {
+          try {
+            carouselRef.current?.scrollToOffset({
+              offset: next * carouselWidth,
+              animated: true,
+            });
+          } catch {}
+        }, 0);
 
         return next;
       });

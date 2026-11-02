@@ -266,6 +266,12 @@ export default function MarketplaceScreen() {
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
   const [dateModalVisible, setDateModalVisible] = useState(false);
 
+  // Packages Modal
+  const [selectedStudioForPackages, setSelectedStudioForPackages] = useState<Studio | null>(null);
+  const [packagesModalVisible, setPackagesModalVisible] = useState(false);
+  const [studioPackages, setStudioPackages] = useState<any[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+
   const [activeAd, setActiveAd] = useState(0);
   const sponsoredCarouselRef = React.useRef<FlatList>(null);
 
@@ -401,6 +407,56 @@ export default function MarketplaceScreen() {
     });
   };
 
+  const handleOpenPackages = async (studio: Studio) => {
+    setSelectedStudioForPackages(studio);
+    setPackagesModalVisible(true);
+    setLoadingPackages(true);
+    try {
+      const res = await fetch(`https://app.photoos.in/api/marketplace/packages?studioId=${encodeURIComponent(studio.id)}`);
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        if (json?.success && Array.isArray(json.data) && json.data.length > 0) {
+          setStudioPackages(json.data);
+          return;
+        }
+      }
+      setStudioPackages([
+        {
+          id: "pkg-1",
+          name: "Standard Wedding & Event Coverage",
+          price: studio.starting_price || 25000,
+          delivery_days: 7,
+          revisions_allowed: 2,
+          description: "Full day professional event coverage with candid and traditional photos.",
+          features: ["Full Day Coverage", "Unlimited High-Res Photos", "AI Online Guest Gallery", "Digital Download Included"],
+        },
+        {
+          id: "pkg-2",
+          name: "Premium Cinematic Package",
+          price: (studio.starting_price || 25000) * 1.6,
+          delivery_days: 5,
+          revisions_allowed: 3,
+          description: "Comprehensive 4K cinematography, drone aerials, and candid photography.",
+          features: ["2 Photographers + 1 Cinematographer", "4K Cinematic Teaser Film", "AI Face Match Instant Gallery", "Hardbound Premium Photo Book"],
+        },
+      ]);
+    } catch {
+      setStudioPackages([
+        {
+          id: "pkg-1",
+          name: "Standard Photography Package",
+          price: studio.starting_price || 20000,
+          delivery_days: 7,
+          revisions_allowed: 2,
+          description: "Complete professional coverage for your special day.",
+          features: ["High-Res Digital Photos", "Full Event Coverage", "AI Instant Gallery"],
+        },
+      ]);
+    } finally {
+      setLoadingPackages(false);
+    }
+  };
+
   const renderStudioCard = ({ item }: { item: Studio }) => (
     <View style={[styles.jdCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
       {/* CARD COVER / LOGO HEADER */}
@@ -533,6 +589,19 @@ export default function MarketplaceScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* PACKAGES BUTTON (पॅकेजेस पहा) */}
+        <TouchableOpacity
+          style={[styles.jdPackagesBtn, { borderColor: "#4F46E5", backgroundColor: "#4F46E510" }]}
+          activeOpacity={0.85}
+          onPress={() => handleOpenPackages(item)}
+        >
+          <Ionicons name="cube-outline" size={15} color="#4F46E5" />
+          <Text style={[styles.jdPackagesBtnText, { color: "#4F46E5" }]}>
+            {language === "मराठी" ? "📦 स्टुडिओ पॅकेजेस पहा (View Packages)" : "📦 View Packages"}
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color="#4F46E5" />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -873,6 +942,107 @@ export default function MarketplaceScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 4: STUDIO PACKAGES MODAL (पॅकेजेस पहा) */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={packagesModalVisible} transparent animationType="slide" onRequestClose={() => setPackagesModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.packagesModalSheet, { backgroundColor: theme.surface }]}>
+            <View style={styles.pickerModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.pickerModalTitle, { color: theme.text }]}>
+                  📦 {language === "मराठी" ? "स्टुडिओ पॅकेजेस" : "Studio Packages"}
+                </Text>
+                {selectedStudioForPackages && (
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                    📍 {selectedStudioForPackages.name}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setPackagesModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            {loadingPackages ? (
+              <View style={{ padding: 40, alignItems: "center", justifyContent: "center" }}>
+                <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
+                  {language === "मराठी" ? "पॅकेजेस लोड होत आहेत..." : "Loading packages..."}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+                {studioPackages.map((pkg: any) => (
+                  <View
+                    key={pkg.id || pkg.name}
+                    style={[
+                      styles.pkgModalCard,
+                      { backgroundColor: theme.background, borderColor: theme.border },
+                    ]}
+                  >
+                    <View style={styles.pkgModalCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pkgModalCardTitle, { color: theme.text }]}>
+                          {pkg.name}
+                        </Text>
+                        <Text style={[styles.pkgModalCardPrice, { color: colors.primary }]}>
+                          ₹{Number(pkg.price || 0).toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                      <View style={[styles.pkgDaysBadge, { backgroundColor: `${colors.primary}15` }]}>
+                        <Ionicons name="time-outline" size={12} color={colors.primary} />
+                        <Text style={[styles.pkgDaysText, { color: colors.primary }]}>
+                          {pkg.delivery_days || 7} {language === "मराठी" ? "दिवस" : "days"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {pkg.description ? (
+                      <Text style={[styles.pkgModalDesc, { color: theme.textSecondary }]}>
+                        {pkg.description}
+                      </Text>
+                    ) : null}
+
+                    {Array.isArray(pkg.features) && pkg.features.length > 0 && (
+                      <View style={styles.pkgFeaturesList}>
+                        {pkg.features.map((feat: string, fIdx: number) => (
+                          <View key={fIdx} style={styles.pkgFeatureRow}>
+                            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                            <Text style={[styles.pkgFeatureText, { color: theme.text }]}>
+                              {feat}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    <TouchableOpacity
+                      style={[styles.pkgBookButton, { backgroundColor: colors.primary }]}
+                      activeOpacity={0.88}
+                      onPress={() => {
+                        setPackagesModalVisible(false);
+                        if (selectedStudioForPackages) {
+                          navigation.getParent()?.navigate("Conversation", {
+                            studioId: selectedStudioForPackages.id,
+                            studioName: selectedStudioForPackages.name,
+                            initialMessage: `Hi, I am interested in booking the '${pkg.name}' package (₹${Number(pkg.price || 0).toLocaleString("en-IN")})!`,
+                          });
+                        }
+                      }}
+                    >
+                      <Ionicons name="chatbubbles" size={15} color="#FFFFFF" />
+                      <Text style={styles.pkgBookButtonText}>
+                        {language === "मराठी" ? "हे पॅकेज बुक करा / चॅट करा" : "Book / Inquire Package"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>
@@ -1302,5 +1472,89 @@ const styles = StyleSheet.create({
   pickerItemText: {
     fontSize: 14,
     fontWeight: "500",
+  },
+  jdPackagesBtn: {
+    marginTop: 10,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  jdPackagesBtnText: {
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  packagesModalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  pkgModalCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    marginTop: 12,
+  },
+  pkgModalCardHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  pkgModalCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  pkgModalCardPrice: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  pkgDaysBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+  },
+  pkgDaysText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  pkgModalDesc: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  pkgFeaturesList: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  pkgFeatureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  pkgFeatureText: {
+    fontSize: 12,
+  },
+  pkgBookButton: {
+    height: 38,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  pkgBookButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "700",
   },
 });

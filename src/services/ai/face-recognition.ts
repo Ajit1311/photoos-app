@@ -106,16 +106,31 @@ export async function loadFaceRecognitionModels(): Promise<boolean> {
 
       console.log("[FaceRecognition] Preparing AI engine backend...");
       if (faceapi.tf) {
-        try {
-          if (faceapi.tf.findBackend && faceapi.tf.findBackend("webgl")) {
-            await faceapi.tf.setBackend("webgl");
-          } else {
-            await faceapi.tf.setBackend("cpu");
-          }
-        } catch {
+        // Detect iOS WebKit / Safari to prevent fatal Metal GPU texture crash
+        const isIOS =
+          typeof navigator !== "undefined" &&
+          (/iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+            (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1));
+
+        if (isIOS) {
           try {
             await faceapi.tf.setBackend("cpu");
-          } catch {}
+            console.log("[FaceRecognition] iOS Safari WebKit detected: using ultra-stable CPU backend to eliminate crashes");
+          } catch {
+            // fallback
+          }
+        } else {
+          try {
+            if (faceapi.tf.findBackend && faceapi.tf.findBackend("webgl")) {
+              await faceapi.tf.setBackend("webgl");
+            } else {
+              await faceapi.tf.setBackend("cpu");
+            }
+          } catch {
+            try {
+              await faceapi.tf.setBackend("cpu");
+            } catch {}
+          }
         }
         if (typeof faceapi.tf.ready === "function") {
           await faceapi.tf.ready();
