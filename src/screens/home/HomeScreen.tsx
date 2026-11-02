@@ -345,6 +345,105 @@ export default function HomeScreen() {
         </View>
 
         {/* ------------------------------------------------------------ */}
+        {/* TOP SPONSORED / PAID AD CAROUSEL */}
+        {/* ------------------------------------------------------------ */}
+        <View style={styles.adSectionHeader}>
+          <View style={styles.topAdBadgeWrap}>
+            <Ionicons name="sparkles" size={12} color="#EF8619" />
+            <Text style={styles.adLabel}>
+              {language === "मराठी" ? "प्रायोजित जाहिरात • SPONSORED" : "SPONSORED SPOTLIGHT"}
+            </Text>
+          </View>
+
+          <View style={styles.carouselIndicator}>
+            {sponsoredAds.map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  index === activeAdIndex
+                    ? [styles.carouselDotActive, { backgroundColor: theme.primary }]
+                    : [styles.carouselDot, { backgroundColor: theme.border }],
+                ]}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.carouselViewport,
+            { width: carouselWidth, borderColor: theme.border },
+          ]}
+        >
+          <FlatList
+            ref={carouselRef}
+            data={sponsoredAds}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            bounces={false}
+            decelerationRate="fast"
+            snapToInterval={carouselWidth}
+            snapToAlignment="start"
+            disableIntervalMomentum
+            keyExtractor={(item) => item.id}
+            getItemLayout={(_, index) => ({
+              length: carouselWidth,
+              offset: carouselWidth * index,
+              index,
+            })}
+            onMomentumScrollEnd={(event) => {
+              const offset = event.nativeEvent.contentOffset.x;
+              const index = Math.round(offset / carouselWidth);
+              setActiveAdIndex(
+                Math.max(0, Math.min(index, sponsoredAds.length - 1))
+              );
+            }}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                activeOpacity={0.92}
+                onPress={() => navigation.navigate("Main", { screen: "Marketplace" })}
+                style={[styles.adCard, { width: carouselWidth }]}
+              >
+                <ImageBackground
+                  source={{ uri: item.image }}
+                  style={styles.adImage}
+                  imageStyle={styles.adImageRadius}
+                  resizeMode="cover"
+                >
+                  <View style={styles.adImageOverlay} />
+
+                  <View style={styles.adBannerContent}>
+                    <View style={styles.adBadge}>
+                      <Text style={styles.adBadgeText}>{item.badge}</Text>
+                    </View>
+
+                    <View style={styles.adBannerBottom}>
+                      <Text style={styles.adTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+
+                      <Text style={styles.adSubtitle} numberOfLines={2}>
+                        {item.subtitle}
+                      </Text>
+
+                      <View style={styles.adAction}>
+                        <Text style={styles.adActionText}>{item.action}</Text>
+                        <Ionicons
+                          name="arrow-forward"
+                          size={14}
+                          color="#0A3F61"
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </ImageBackground>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+
+        {/* ------------------------------------------------------------ */}
         {/* ACTIVE EVENT HERO CARD */}
         {/* ------------------------------------------------------------ */}
         {activeEvent ? (
@@ -637,101 +736,6 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ------------------------------------------------------------ */}
-        {/* SPONSORED CAROUSEL */}
-        {/* ------------------------------------------------------------ */}
-        <View style={styles.adSectionHeader}>
-          <Text style={[styles.adLabel, { color: theme.textSecondary }]}>
-            {t("sponsored")}
-          </Text>
-
-          <View style={styles.carouselIndicator}>
-            {sponsoredAds.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  index === activeAdIndex
-                    ? [styles.carouselDotActive, { backgroundColor: theme.primary }]
-                    : [styles.carouselDot, { backgroundColor: theme.border }],
-                ]}
-              />
-            ))}
-          </View>
-        </View>
-
-        <View
-          style={[
-            styles.carouselViewport,
-            { width: carouselWidth, borderColor: theme.border },
-          ]}
-        >
-          <FlatList
-            ref={carouselRef}
-            data={sponsoredAds}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            bounces={false}
-            decelerationRate="fast"
-            snapToInterval={carouselWidth}
-            snapToAlignment="start"
-            disableIntervalMomentum
-            keyExtractor={(item) => item.id}
-            getItemLayout={(_, index) => ({
-              length: carouselWidth,
-              offset: carouselWidth * index,
-              index,
-            })}
-            onMomentumScrollEnd={(event) => {
-              const offset = event.nativeEvent.contentOffset.x;
-              const index = Math.round(offset / carouselWidth);
-              setActiveAdIndex(
-                Math.max(0, Math.min(index, sponsoredAds.length - 1))
-              );
-            }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                activeOpacity={0.92}
-                onPress={() => navigation.navigate("Main", { screen: "Marketplace" })}
-                style={[styles.adCard, { width: carouselWidth }]}
-              >
-                <ImageBackground
-                  source={{ uri: item.image }}
-                  style={styles.adImage}
-                  imageStyle={styles.adImageRadius}
-                  resizeMode="cover"
-                >
-                  <View style={styles.adImageOverlay} />
-
-                  <View style={styles.adBannerContent}>
-                    <View style={styles.adBadge}>
-                      <Text style={styles.adBadgeText}>{item.badge}</Text>
-                    </View>
-
-                    <View style={styles.adBannerBottom}>
-                      <Text style={styles.adTitle} numberOfLines={2}>
-                        {item.title}
-                      </Text>
-
-                      <Text style={styles.adSubtitle} numberOfLines={2}>
-                        {item.subtitle}
-                      </Text>
-
-                      <View style={styles.adAction}>
-                        <Text style={styles.adActionText}>{item.action}</Text>
-                        <Ionicons
-                          name="arrow-forward"
-                          size={14}
-                          color="#000000"
-                        />
-                      </View>
-                    </View>
-                  </View>
-                </ImageBackground>
-              </TouchableOpacity>
-            )}
-          />
-        </View>
 
         {/* ------------------------------------------------------------ */}
         {/* APPLE QUICK ACCESS GRID */}
@@ -1375,13 +1379,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 10,
+    marginTop: 6,
+  },
+
+  topAdBadgeWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(239, 134, 25, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 134, 25, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
   },
 
   adLabel: {
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "800",
     letterSpacing: 0.8,
+    color: "#EF8619",
   },
 
   adBadge: {

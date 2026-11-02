@@ -17,6 +17,9 @@ import {
   createSupabaseAccount,
   updateSupabaseDisplayName,
   signOutSupabase,
+  signInWithGoogleOAuth,
+  sendOtpService,
+  verifyOtpService,
 } from "./supabase-auth.service";
 
 import { parsePhotoOSDeepLink, parsePhotoOSGalleryDeepLink } from "../qr/deep-link.service";
@@ -42,6 +45,18 @@ type AuthContextValue = {
   ) => Promise<User>;
 
   signOut: () => Promise<void>;
+
+  signInWithGoogle: () => Promise<void>;
+
+  sendOtp: (
+    email: string,
+  ) => Promise<{ success: boolean; message?: string; token?: string }>;
+
+  verifyOtp: (
+    email: string,
+    otp: string,
+    token?: string,
+  ) => Promise<User>;
 
   emailOtpVerified: boolean;
 
@@ -253,6 +268,22 @@ export function AuthProvider({
           setPendingStudioToken(null);
           setPendingGalleryToken(null);
         }
+      },
+
+      signInWithGoogle: async () => {
+        await signInWithGoogleOAuth();
+      },
+
+      sendOtp: async (email: string) => {
+        return sendOtpService(email);
+      },
+
+      verifyOtp: async (email: string, otp: string, token?: string) => {
+        const verifiedUser = await verifyOtpService(email, otp, token);
+        setUser(verifiedUser);
+        setEmailOtpVerified(true);
+        setPendingOtpEmail(null);
+        return verifiedUser;
       },
 
       markEmailOtpVerified: async () => {

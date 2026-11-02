@@ -650,6 +650,69 @@ export default function MarketplaceScreen() {
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
+            {/* TOP SPONSORED / PAID AD BANNER CAROUSEL */}
+            <View style={styles.topAdContainer}>
+              <View style={styles.topAdHeaderRow}>
+                <View style={styles.topAdBadge}>
+                  <Ionicons name="sparkles" size={12} color="#EF8619" />
+                  <Text style={styles.topAdBadgeText}>
+                    {language === "मराठी" ? "प्रायोजित जाहिरात • SPONSORED" : "SPONSORED SPOTLIGHT"}
+                  </Text>
+                </View>
+                <Text style={[styles.topAdSublabel, { color: theme.textSecondary }]}>
+                  {language === "मराठी" ? "प्रमाणित स्टुडिओ पार्टनर्स" : "Verified Studio Spotlight"}
+                </Text>
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.topAdScrollList}
+              >
+                {sponsoredAds.map((ad, idx) => (
+                  <TouchableOpacity
+                    key={`m_ad_${idx}`}
+                    activeOpacity={0.92}
+                    style={styles.topAdCardWrap}
+                    onPress={() => {
+                      if (visibleStudios.length > 0) {
+                        const target = visibleStudios[idx % visibleStudios.length];
+                        navigation.navigate("StudioDetails", { studioId: target.id, studioName: target.name });
+                      }
+                    }}
+                  >
+                    <ImageBackground
+                      source={{ uri: ad.image }}
+                      style={styles.topAdCardImage}
+                      imageStyle={{ borderRadius: 20 }}
+                      resizeMode="cover"
+                    >
+                      <View style={styles.topAdCardOverlay} />
+                      <View style={styles.topAdContent}>
+                        <View style={styles.topAdCardTag}>
+                          <Text style={styles.topAdCardTagText}>
+                            {idx === 0 ? "FEATURED STUDIO" : idx === 1 ? "SPECIAL OFFER" : "TOP RATED"}
+                          </Text>
+                        </View>
+                        <Text style={styles.topAdCardTitle} numberOfLines={2}>
+                          {ad.title}
+                        </Text>
+                        <Text style={styles.topAdCardSubtitle} numberOfLines={2}>
+                          {ad.subtitle}
+                        </Text>
+                        <View style={styles.topAdCardAction}>
+                          <Text style={styles.topAdCardActionText}>
+                            {language === "मराठी" ? "स्टुडिओ पहा" : "Explore Studio"}
+                          </Text>
+                          <Ionicons name="arrow-forward" size={12} color="#0A3F61" />
+                        </View>
+                      </View>
+                    </ImageBackground>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
             {/* TITLE & SEARCH BAR */}
             <View style={styles.titleSection}>
               <Text style={[styles.mainTitle, { color: theme.text }]}>
@@ -1556,5 +1619,105 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12.5,
     fontWeight: "700",
+  },
+  topAdContainer: {
+    marginBottom: 20,
+    marginTop: 4,
+  },
+  topAdHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  topAdBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(239, 134, 25, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 134, 25, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  topAdBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#EF8619",
+    letterSpacing: 0.8,
+  },
+  topAdSublabel: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  topAdScrollList: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  topAdCardWrap: {
+    width: 290,
+    height: 155,
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#0A3F61",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  topAdCardImage: {
+    width: "100%",
+    height: "100%",
+  },
+  topAdCardOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(6, 24, 38, 0.62)",
+    borderRadius: 20,
+  },
+  topAdContent: {
+    flex: 1,
+    padding: 14,
+    justifyContent: "space-between",
+  },
+  topAdCardTag: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  topAdCardTagText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#0A3F61",
+    letterSpacing: 0.5,
+  },
+  topAdCardTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.2,
+  },
+  topAdCardSubtitle: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: "rgba(255, 255, 255, 0.85)",
+  },
+  topAdCardAction: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  topAdCardActionText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#0A3F61",
   },
 });

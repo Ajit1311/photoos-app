@@ -214,20 +214,30 @@ export default function ProfileScreen() {
   }, [profile, identityName, firebaseName]);
 
   const handleLogout = useCallback(() => {
-    Alert.alert("Log out", "Are you sure you want to log out of PhotoOS?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await authSignOut();
-          } catch (logoutError) {
-            Alert.alert("Unable to log out", "Please try again.");
-          }
+    const doLogout = async () => {
+      try {
+        await authSignOut();
+      } catch (logoutError) {
+        Alert.alert("Unable to log out", "Please try again.");
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm("Are you sure you want to log out of PhotoOS?")) {
+        void doLogout();
+      }
+    } else {
+      Alert.alert("Log out", "Are you sure you want to log out of PhotoOS?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: () => {
+            void doLogout();
+          },
         },
-      },
-    ]);
+      ]);
+    }
   }, [authSignOut]);
 
   if (loading) {

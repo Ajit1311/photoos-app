@@ -44,6 +44,8 @@ import {
 } from "../services/client/client-studio-flow.service";
 
 import { colors } from "../theme/colors";
+import { useAuth } from "../services/auth/auth-context";
+import LoginScreen from "../screens/auth/LoginScreen";
 
 import type {
   RootStackParamList,
@@ -130,6 +132,7 @@ function AuthenticatedNavigator() {
 }
 
 export default function AppNavigator() {
+  const { user, loading: authLoading } = useAuth();
   const [legalCompliant, setLegalCompliant] = useState<boolean | null>(null);
 
   const checkCompliance = useCallback(async () => {
@@ -150,7 +153,7 @@ export default function AppNavigator() {
     void checkCompliance();
   }, [checkCompliance]);
 
-  if (legalCompliant === null) {
+  if (authLoading || (user && legalCompliant === null)) {
     return (
       <View
         style={{
@@ -168,7 +171,18 @@ export default function AppNavigator() {
     );
   }
 
-  // If legal agreement has not been accepted yet, require acceptance first
+  // 1. If not authenticated, show the Google & OTP Login Screen
+  if (!user) {
+    return (
+      <LoginScreen
+        onSuccess={() => {
+          void checkCompliance();
+        }}
+      />
+    );
+  }
+
+  // 2. After login/OTP, if legal agreement has not been accepted yet, require strict acceptance
   if (!legalCompliant) {
     return (
       <ClientLegalAcceptanceScreen
@@ -179,6 +193,6 @@ export default function AppNavigator() {
     );
   }
 
-  // Once accepted, enter straight into the authenticated Home experience
+  // 3. Once authenticated and legally compliant, enter the premium Home experience
   return <AuthenticatedNavigator />;
 }
