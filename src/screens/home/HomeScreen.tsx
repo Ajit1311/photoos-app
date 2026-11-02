@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ScrollView,
   FlatList,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -134,6 +135,21 @@ export default function HomeScreen() {
   );
   const [eventPhotos, setEventPhotos] = useState<LiveEventPhoto[]>([]);
   const [loadingEventPhotos, setLoadingEventPhotos] = useState(false);
+  const [cachedMatchedCount, setCachedMatchedCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined" && activeEvent?.eventId) {
+      try {
+        const raw = localStorage.getItem(`@photoos_matched_${activeEvent.eventId}`);
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            setCachedMatchedCount(list.length);
+          }
+        }
+      } catch {}
+    }
+  }, [activeEvent?.eventId]);
 
   useEffect(() => {
     void (async () => {
@@ -413,6 +429,29 @@ export default function HomeScreen() {
                   ? "अपनी तस्वीरें AI से खोजने के लिए सेल्फी स्कैन करें या सीधे सभी फोटो देखें।"
                   : "Scan your face for instant AI matching or browse all event photos directly."}
             </Text>
+
+            {/* ACTION 0: DEDICATED PERSONAL MATCHED ALBUM IF ALREADY SCANNED */}
+            {cachedMatchedCount > 0 && (
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={[
+                  styles.eventHeroButton,
+                  {
+                    backgroundColor: "#10B981",
+                    marginBottom: 10,
+                  },
+                ]}
+                onPress={() => navigation.navigate("FaceMatchResults", {})}
+              >
+                <Ionicons name="folder-open" size={18} color="#FFFFFF" />
+                <Text style={styles.eventHeroButtonText}>
+                  {language === "मराठी"
+                    ? `✨ माझा वैयक्तिक अल्बम (${cachedMatchedCount} फोटो)`
+                    : `✨ My Personal Album (${cachedMatchedCount} Photos)`}
+                </Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
 
             {/* ACTION 1: AI FACE MATCH */}
             <TouchableOpacity

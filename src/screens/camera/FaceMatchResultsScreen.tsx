@@ -637,50 +637,60 @@ export default function FaceMatchResultsScreen() {
         });
         if (searchRes.ok) {
           const searchData = await searchRes.json();
-          if (searchData.success && searchData.hasIndexedFaces && Array.isArray(searchData.matches) && searchData.matches.length > 0) {
+          // If server has indexed faces for this gallery, use the authoritative database match result!
+          if (searchData.success && searchData.hasIndexedFaces) {
+            const matches = Array.isArray(searchData.matches) ? searchData.matches : [];
             const matchedMap = new Map<string, number>(
-              searchData.matches.map((m: any) => [String(m.asset_id), Number(m.similarity) || 95])
+              matches.map((m: any) => [String(m.asset_id), Number(m.similarity) || 95])
             );
             const serverMatched: DisplayPhoto[] = photos
               .filter((p) => matchedMap.has(p.id))
               .map((p) => ({ ...p, confidence: matchedMap.get(p.id) || 95, isMatch: true }));
-            if (serverMatched.length > 0) {
-              setMatchedPhotos(serverMatched);
-              if (Platform.OS === "web" && typeof window !== "undefined") {
-                const serialized = JSON.stringify(serverMatched);
-                localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
-                sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
-                sessionStorage.removeItem("@photoos_matching_in_progress");
-              }
-              setViewTab("matched");
-              setMatchingState("done");
-              return;
+
+            setMatchedPhotos(serverMatched);
+            if (Platform.OS === "web" && typeof window !== "undefined") {
+              const serialized = JSON.stringify(serverMatched);
+              localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+              sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+              sessionStorage.removeItem("@photoos_matching_in_progress");
             }
+            setViewTab("matched");
+            setMatchingState("done");
+            return;
           }
         }
       } catch (srvErr) {
         console.warn("[FaceMatch] Server match notice:", srvErr);
       }
 
-      // Step 4: Scan and match each photo sequentially (lightweight, zero WebGL crash)
+      // Step 4: Fallback scan for unindexed photos (safe batch processing with WebKit protection)
+      const isMobile =
+        Platform.OS !== "web" ||
+        (typeof navigator !== "undefined" &&
+          (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "") ||
+            (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1)));
+
       setMatchingState("matching");
       const matchedList: DisplayPhoto[] = [];
 
-      for (let i = 0; i < photos.length; i++) {
+      // Limit client-side processing count on mobile to prevent WebKit memory exhaustion
+      const maxScanPhotos = isMobile ? Math.min(photos.length, 12) : photos.length;
+
+      for (let i = 0; i < maxScanPhotos; i++) {
         const photo = photos[i];
         const progressCount = i + 1;
         setStatusMessage(
           language === "मराठी"
-            ? `तुमचे फोटो शोधत आहे... (${progressCount}/${photos.length} फोटो)`
+            ? `तुमचे फोटो शोधत आहे... (${progressCount}/${maxScanPhotos} फोटो)`
             : language === "हिन्दी"
-              ? `तस्वीरें खोजी जा रही हैं... (${progressCount}/${photos.length} फोटो)`
-              : `Matching your face against event photos... (${progressCount}/${photos.length})`
+              ? `तस्वीरें खोजी जा रही हैं... (${progressCount}/${maxScanPhotos} फोटो)`
+              : `Matching your face against event photos... (${progressCount}/${maxScanPhotos})`
         );
 
-        // Prioritize lightweight thumbnail (downscaled to 480px) to prevent iOS Safari memory exhaustion
+        // Prioritize lightweight thumbnail (downscaled to 360px) to prevent iOS Safari memory exhaustion
         const rawPhotoUrl = photo.thumbnailUrl || photo.url;
         const photoUrl = rawPhotoUrl
-          ? rawPhotoUrl.replace("w=1200", "w=480").replace("w=1080", "w=480").replace("w=640", "w=480")
+          ? rawPhotoUrl.replace("w=1200", "w=360").replace("w=1080", "w=360").replace("w=640", "w=360")
           : "";
 
         if (photoUrl) {
@@ -700,7 +710,6 @@ export default function FaceMatchResultsScreen() {
                   isMatch: true,
                 };
                 matchedList.push(item);
-                // Dynamically update state so user sees matched photos appearing live in real time!
                 setMatchedPhotos([...matchedList]);
               }
             }
@@ -709,8 +718,8 @@ export default function FaceMatchResultsScreen() {
           }
         }
 
-        // Cooperative 80ms yield to allow browser GC to free memory and keep UI silky smooth
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        // Cooperative 120ms yield to allow browser GC to free memory and keep UI silky smooth
+        await new Promise((resolve) => setTimeout(resolve, 120));
       }
 
       // Sort matched photos by highest confidence

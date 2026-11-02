@@ -104,29 +104,30 @@ export async function loadFaceRecognitionModels(): Promise<boolean> {
         return true;
       }
 
-      console.log("[FaceRecognition] Loading 99%+ accuracy neural network models from CDN...");
+      console.log("[FaceRecognition] Preparing AI engine backend...");
+      if (faceapi.tf) {
+        try {
+          if (faceapi.tf.findBackend && faceapi.tf.findBackend("webgl")) {
+            await faceapi.tf.setBackend("webgl");
+          } else {
+            await faceapi.tf.setBackend("cpu");
+          }
+        } catch {
+          try {
+            await faceapi.tf.setBackend("cpu");
+          } catch {}
+        }
+        if (typeof faceapi.tf.ready === "function") {
+          await faceapi.tf.ready();
+        }
+      }
+
+      console.log("[FaceRecognition] Loading neural network models from CDN...");
       await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(CDN_MODEL_PATH),
         faceapi.nets.faceLandmark68Net.loadFromUri(CDN_MODEL_PATH),
         faceapi.nets.faceRecognitionNet.loadFromUri(CDN_MODEL_PATH),
       ]);
-
-      // Switch backend to CPU on iOS / Safari to prevent WebGL Metal GPU memory crashes
-      const isIOS =
-        typeof navigator !== "undefined" &&
-        (/iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
-          (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1));
-
-      if (faceapi.tf) {
-        if (isIOS && typeof faceapi.tf.setBackend === "function") {
-          try {
-            await faceapi.tf.setBackend("cpu");
-            console.log("[FaceRecognition] iOS WebKit detected: using CPU backend for 100% crash-free stability");
-          } catch (backendErr) {
-            console.warn("[FaceRecognition] Could not switch to CPU backend:", backendErr);
-          }
-        }
-      }
 
       modelsLoaded = true;
       console.log("[FaceRecognition] AI Models loaded successfully!");
