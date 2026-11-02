@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -49,8 +50,11 @@ interface PhotoThumbnailItemProps {
   theme: any;
   allowDownloads: boolean;
   watermarkUrl?: string | null;
+  isLiked?: boolean;
   onSelect: () => void;
   onDownload: () => void;
+  onLikeToggle?: () => void;
+  onOpenComment?: () => void;
 }
 
 function PhotoThumbnailItem({
@@ -58,8 +62,11 @@ function PhotoThumbnailItem({
   theme,
   allowDownloads,
   watermarkUrl,
+  isLiked,
   onSelect,
   onDownload,
+  onLikeToggle,
+  onOpenComment,
 }: PhotoThumbnailItemProps) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -104,6 +111,22 @@ function PhotoThumbnailItem({
           }}
         />
 
+        {/* QUICK LIKE HEART BUTTON */}
+        <TouchableOpacity
+          style={styles.quickLikeButton}
+          activeOpacity={0.8}
+          onPress={(e: any) => {
+            e.stopPropagation?.();
+            onLikeToggle?.();
+          }}
+        >
+          <Ionicons
+            name={isLiked ? "heart" : "heart-outline"}
+            size={18}
+            color={isLiked ? "#E5484D" : "#FFFFFF"}
+          />
+        </TouchableOpacity>
+
         {/* WATERMARK OVERLAY WHEN DOWNLOADS ARE OFF */}
         {!allowDownloads && (
           <View style={styles.thumbnailWatermarkOverlay} pointerEvents="none">
@@ -144,14 +167,26 @@ function PhotoThumbnailItem({
           {photo.name || "Event Photo"}
         </Text>
 
-        {allowDownloads && (
+        <View style={styles.photoFooterActions}>
           <TouchableOpacity
-            style={styles.photoQuickDownload}
-            onPress={onDownload}
+            style={styles.photoQuickComment}
+            onPress={(e: any) => {
+              e.stopPropagation?.();
+              onOpenComment?.();
+            }}
           >
-            <Ionicons name="download-outline" size={18} color={theme.primary} />
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.textSecondary} />
           </TouchableOpacity>
-        )}
+
+          {allowDownloads && (
+            <TouchableOpacity
+              style={styles.photoQuickDownload}
+              onPress={onDownload}
+            >
+              <Ionicons name="download-outline" size={16} color={theme.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -198,6 +233,132 @@ export default function FaceMatchResultsScreen() {
   const [allowDownloads, setAllowDownloads] = useState<boolean>(false);
   const [watermarkUrl, setWatermarkUrl] = useState<string | null>(null);
   const [screenshotNotice, setScreenshotNotice] = useState<boolean>(false);
+
+  // Photo Likes & Comments State
+  const [likedPhotoIds, setLikedPhotoIds] = useState<Set<string>>(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const eventId = route.params?.eventId || activeEvent?.eventId;
+      if (eventId) {
+        try {
+          const raw = localStorage.getItem(`@photoos_likes_${eventId}`);
+          if (raw) return new Set(JSON.parse(raw));
+        } catch {}
+      }
+    }
+    return new Set();
+  });
+
+  const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [commentPhoto, setCommentPhoto] = useState<DisplayPhoto | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [commentSuccessToast, setCommentSuccessToast] = useState<string | null>(null);
+
+  const togglePhotoLike = async (photo: DisplayPhoto) => {
+    const isLiked = likedPhotoIds.has(photo.id);
+    const nextSet = new Set(likedPhotoIds);
+    if (isLiked) nextSet.delete(photo.id);
+    else nextSet.add(photo.id);
+    setLikedPhotoIds(nextSet);
+
+    const eventId = route.params?.eventId || activeEvent?.eventId;
+    if (Platform.OS === "web" && typeof window !== "undefined" && eventId) {
+      try {
+        localStorage.setItem(`@photoos_likes_${eventId}`, JSON.stringify(Array.from(nextSet)));
+      } catch {}
+    }
+
+    if (eventId) {
+      void fetch(`https://app.photoos.in/api/gallery/${encodeURIComponent(eventId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "like",
+          photoId: photo.id,
+          liked: !isLiked,
+        }),
+      }).catch(() => {});
+    }
+  };
+
+  const openCommentModal = (photo: DisplayPhoto) => {
+    setCommentPhoto(photo);
+    setCommentText("");
+    setCommentModalVisible(true);
+  };
+
+  const handleSendCommentToStudio = async () => {
+    if (!commentPhoto || !commentText.trim()) return;
+    setSubmittingComment(true);
+
+    const currentEventId = route.params?.eventId || activeEvent?.eventId;
+    const currentStudioId = eventInfo?.studioId || activeEvent?.studioId;
+    const currentStudioName = eventInfo?.studioName || activeEvent?.studioName || "Photo Studio";
+    const noteContent = commentText.trim();
+    const photoTitle = commentPhoto.name || `Photo ${commentPhoto.id.slice(0, 8)}`;
+
+    try {
+      // 1. Post to backend gallery photo comment API
+      if (currentEventId) {
+        await fetch(`https://app.photoos.in/api/gallery/${encodeURIComponent(currentEventId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "comment",
+            photoId: commentPhoto.id,
+            photoName: photoTitle,
+            photoUrl: commentPhoto.thumbnailUrl || commentPhoto.url,
+            comment: noteContent,
+            studioId: currentStudioId,
+          }),
+        }).catch((e) => console.warn("[FaceMatch] Photo note api notice:", e));
+      }
+
+      // 2. Dispatch to 1-on-1 Chat so it appears in the app chat section & studio dashboard
+      try {
+        const startRes = await fetch("https://app.photoos.in/api/client-marketplace-chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "start",
+            studio_id: currentStudioId,
+            studio_name: currentStudioName,
+          }),
+        });
+        const startData = await startRes.json();
+        const conversationId = startData?.data?.conversation_id || startData?.data?.id;
+
+        if (conversationId) {
+          await fetch("https://app.photoos.in/api/client-marketplace-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "send",
+              conversation_id: conversationId,
+              content: `📸 [Photo Note on ${photoTitle}]: "${noteContent}"`,
+            }),
+          });
+        }
+      } catch (chatErr) {
+        console.warn("[FaceMatch] Chat sync notice:", chatErr);
+      }
+
+      setCommentSuccessToast(
+        language === "मराठी"
+          ? `✅ तुमची नोट '${currentStudioName}' स्टुडिओच्या चॅटमध्ये पाठवली आहे!`
+          : `✅ Note sent directly to ${currentStudioName}'s chat!`
+      );
+      setTimeout(() => setCommentSuccessToast(null), 3500);
+
+      setCommentModalVisible(false);
+      setCommentPhoto(null);
+      setCommentText("");
+    } catch (err) {
+      console.warn("Failed to send note:", err);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   // Anti-screenshot, anti-right-click, and print protection when downloads are disabled
   useEffect(() => {
@@ -400,6 +561,20 @@ export default function FaceMatchResultsScreen() {
         currentSelfie = sessionStorage.getItem("@photoos_last_selfie_v2") || undefined;
       }
 
+      // Safari Crash Loop Breaker: If previous execution crashed/reloaded mid-match, clear selfie to stop reload loop
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        const wasInProgress = sessionStorage.getItem("@photoos_matching_in_progress");
+        if (wasInProgress === "true") {
+          console.warn("[FaceMatch] Breaking reload loop in Safari");
+          sessionStorage.removeItem("@photoos_matching_in_progress");
+          sessionStorage.removeItem("@photoos_last_selfie_v2");
+          currentSelfie = undefined;
+          setViewTab("all");
+          setMatchingState("done");
+          return;
+        }
+      }
+
       if (!currentSelfie) {
         // Direct event access or browse: show all photos immediately
         setViewTab("all");
@@ -447,6 +622,49 @@ export default function FaceMatchResultsScreen() {
       }
 
       const selfieDescriptor = selfieResult.descriptor;
+
+      // Mark matching in progress to protect against sudden browser tab reload
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        sessionStorage.setItem("@photoos_matching_in_progress", "true");
+      }
+
+      // Step 3.5: Instant Server-Side Face Match (pgvector Euclidean Distance)
+      try {
+        const searchRes = await fetch("https://app.photoos.in/api/ai/face-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            eventId,
+            descriptor: selfieDescriptor,
+            consentGranted: true,
+          }),
+        });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.success && searchData.hasIndexedFaces && Array.isArray(searchData.matches) && searchData.matches.length > 0) {
+            const matchedMap = new Map<string, number>(
+              searchData.matches.map((m: any) => [String(m.asset_id), Number(m.similarity) || 95])
+            );
+            const serverMatched: DisplayPhoto[] = photos
+              .filter((p) => matchedMap.has(p.id))
+              .map((p) => ({ ...p, confidence: matchedMap.get(p.id) || 95, isMatch: true }));
+            if (serverMatched.length > 0) {
+              setMatchedPhotos(serverMatched);
+              if (Platform.OS === "web" && typeof window !== "undefined") {
+                const serialized = JSON.stringify(serverMatched);
+                localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+                sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+                sessionStorage.removeItem("@photoos_matching_in_progress");
+              }
+              setViewTab("matched");
+              setMatchingState("done");
+              return;
+            }
+          }
+        }
+      } catch (srvErr) {
+        console.warn("[FaceMatch] Server match notice:", srvErr);
+      }
 
       // Step 4: Scan and match each photo sequentially (lightweight, zero WebGL crash)
       setMatchingState("matching");
@@ -503,6 +721,7 @@ export default function FaceMatchResultsScreen() {
           const serialized = JSON.stringify(matchedList);
           localStorage.setItem(`@photoos_matched_${eventId}`, serialized);
           sessionStorage.setItem(`@photoos_matched_${eventId}`, serialized);
+          sessionStorage.removeItem("@photoos_matching_in_progress");
         } catch {}
       }
       // ALWAYS keep the user on their dedicated personal matched album tab!
@@ -510,6 +729,9 @@ export default function FaceMatchResultsScreen() {
       setMatchingState("done");
     } catch (err: any) {
       console.error("[FaceMatchResults] Flow error:", err);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        sessionStorage.removeItem("@photoos_matching_in_progress");
+      }
       setViewTab("matched");
       setMatchingState("done");
     }
@@ -965,8 +1187,11 @@ export default function FaceMatchResultsScreen() {
                 theme={theme}
                 allowDownloads={allowDownloads}
                 watermarkUrl={watermarkUrl}
+                isLiked={likedPhotoIds.has(photo.id)}
                 onSelect={() => setSelectedPhoto(photo)}
                 onDownload={() => handleDownloadSingle(photo)}
+                onLikeToggle={() => togglePhotoLike(photo)}
+                onOpenComment={() => openCommentModal(photo)}
               />
             ))}
           </View>
@@ -1054,8 +1279,47 @@ export default function FaceMatchResultsScreen() {
               )}
             </View>
 
-            {/* ACTION BUTTONS */}
+            {/* ACTION BUTTONS (LIKE, NOTE, SHARE, DOWNLOAD) */}
             <View style={[styles.modalBottomBar, { paddingBottom: insets.bottom + 18 }]}>
+              {/* 1. LIKE BUTTON */}
+              <TouchableOpacity
+                style={[
+                  styles.modalActionBtnSecondary,
+                  likedPhotoIds.has(selectedPhoto.id) && { borderColor: "#E5484D", backgroundColor: "#E5484D18" },
+                ]}
+                onPress={() => togglePhotoLike(selectedPhoto)}
+              >
+                <Ionicons
+                  name={likedPhotoIds.has(selectedPhoto.id) ? "heart" : "heart-outline"}
+                  size={20}
+                  color={likedPhotoIds.has(selectedPhoto.id) ? "#E5484D" : "#FFFFFF"}
+                />
+                <Text
+                  style={[
+                    styles.modalBtnTextSec,
+                    likedPhotoIds.has(selectedPhoto.id) && { color: "#E5484D" },
+                  ]}
+                >
+                  {likedPhotoIds.has(selectedPhoto.id) ? "Liked" : "Like"}
+                </Text>
+              </TouchableOpacity>
+
+              {/* 2. COMMENT / NOTE TO STUDIO */}
+              <TouchableOpacity
+                style={[styles.modalActionBtnSecondary, { borderColor: colors.primary, backgroundColor: `${colors.primary}18` }]}
+                onPress={() => {
+                  const target = selectedPhoto;
+                  setSelectedPhoto(null);
+                  openCommentModal(target);
+                }}
+              >
+                <Ionicons name="chatbubble-ellipses" size={20} color={colors.primary} />
+                <Text style={[styles.modalBtnTextSec, { color: colors.primary }]}>
+                  {language === "मराठी" ? "स्टुडिओ नोट" : "Note"}
+                </Text>
+              </TouchableOpacity>
+
+              {/* 3. SHARE TO WHATSAPP */}
               <TouchableOpacity
                 style={styles.modalActionBtnSecondary}
                 onPress={() => handleWhatsAppShare(selectedPhoto)}
@@ -1064,6 +1328,7 @@ export default function FaceMatchResultsScreen() {
                 <Text style={styles.modalBtnTextSec}>Share</Text>
               </TouchableOpacity>
 
+              {/* 4. DOWNLOAD */}
               {allowDownloads && (
                 <TouchableOpacity
                   style={[styles.modalActionBtnPrimary, { backgroundColor: theme.primary }]}
@@ -1076,6 +1341,109 @@ export default function FaceMatchResultsScreen() {
             </View>
           </View>
         </Modal>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: CLIENT PHOTO COMMENT / NOTE SINK TO STUDIO CHAT */}
+      {/* ------------------------------------------------------------- */}
+      {commentModalVisible && commentPhoto && (
+        <Modal
+          visible={commentModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setCommentModalVisible(false)}
+        >
+          <View style={styles.commentModalBackdrop}>
+            <View style={[styles.commentModalSheet, { backgroundColor: theme.surface }]}>
+              {/* HEADER */}
+              <View style={styles.commentModalHeader}>
+                <View style={styles.commentModalHeaderLeft}>
+                  <Ionicons name="chatbubble-ellipses" size={20} color={colors.primary} />
+                  <Text style={[styles.commentModalTitle, { color: theme.text }]}>
+                    {language === "मराठी" ? "स्टुडिओला सूचना / नोट पाठवा" : "Send Note to Studio"}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setCommentModalVisible(false)}>
+                  <Ionicons name="close" size={24} color={theme.text} />
+                </TouchableOpacity>
+              </View>
+
+              {/* PHOTO INFO PREVIEW */}
+              <View style={[styles.commentPhotoSnippet, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                <Image
+                  source={{ uri: commentPhoto.thumbnailUrl || commentPhoto.url }}
+                  style={styles.commentSnippetThumb}
+                  resizeMode="cover"
+                />
+                <View style={styles.commentSnippetInfo}>
+                  <Text style={[styles.commentSnippetName, { color: theme.text }]} numberOfLines={1}>
+                    {commentPhoto.name || "Event Photo"}
+                  </Text>
+                  <Text style={[styles.commentSnippetStudio, { color: theme.textSecondary }]}>
+                    📍 {eventInfo?.studioName || activeEvent?.studioName || "Photo Studio"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* NOTE INPUT */}
+              <Text style={[styles.commentInputLabel, { color: theme.textSecondary }]}>
+                {language === "मराठी"
+                  ? "या फोटोबद्दल तुमची नोट लिहा (उदा. रिटच करा, मुख्य आल्बममध्ये टाका):"
+                  : "Write your note for this photo (e.g. Please retouch, select for album):"}
+              </Text>
+              <TextInput
+                value={commentText}
+                onChangeText={setCommentText}
+                placeholder={
+                  language === "मराठी"
+                    ? "येथे तुमची नोट टाईप करा..."
+                    : "Type your instructions or feedback here..."
+                }
+                placeholderTextColor={theme.textMuted}
+                multiline
+                numberOfLines={3}
+                style={[
+                  styles.commentTextInput,
+                  {
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                  },
+                ]}
+              />
+
+              {/* SEND BUTTON */}
+              <TouchableOpacity
+                style={[
+                  styles.commentSubmitBtn,
+                  { backgroundColor: colors.primary },
+                  (!commentText.trim() || submittingComment) && { opacity: 0.6 },
+                ]}
+                disabled={!commentText.trim() || submittingComment}
+                onPress={handleSendCommentToStudio}
+              >
+                {submittingComment ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={16} color="#FFFFFF" />
+                    <Text style={styles.commentSubmitText}>
+                      {language === "मराठी" ? "स्टुडिओ चॅटमध्ये पाठवा" : "Send to Studio Chat"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* COMMENT SUCCESS TOAST */}
+      {commentSuccessToast && (
+        <View style={styles.commentToastWrap}>
+          <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+          <Text style={styles.commentToastText}>{commentSuccessToast}</Text>
+        </View>
       )}
 
       {/* SCREENSHOT WARNING TOAST */}
@@ -1680,5 +2048,131 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     textAlign: "center",
+  },
+  /* LIKE & COMMENT EXTENSIONS */
+  quickLikeButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoFooterActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  photoQuickComment: {
+    padding: 4,
+  },
+  commentModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  commentModalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  commentModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
+  },
+  commentModalHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  commentModalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  commentPhotoSnippet: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginVertical: 14,
+  },
+  commentSnippetThumb: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+  },
+  commentSnippetInfo: {
+    flex: 1,
+  },
+  commentSnippetName: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  commentSnippetStudio: {
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  commentInputLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    marginBottom: 8,
+  },
+  commentTextInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 13.5,
+    minHeight: 80,
+    textAlignVertical: "top",
+    marginBottom: 16,
+  },
+  commentSubmitBtn: {
+    height: 44,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  commentSubmitText: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+  commentToastWrap: {
+    position: "absolute",
+    bottom: 90,
+    left: 20,
+    right: 20,
+    zIndex: 99999,
+    backgroundColor: "#168A5B",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  commentToastText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "600",
+    flex: 1,
   },
 });

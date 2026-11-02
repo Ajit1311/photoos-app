@@ -127,13 +127,31 @@ export async function getMarketplaceStudioProfile(
 }
 
 export async function getClientMarketplaceStudios(
-  limit = 50,
+  params?: { city?: string; area?: string; category?: string; search?: string; limit?: number } | number,
 ): Promise<unknown> {
+  const queryObj = typeof params === "object" && params !== null ? params : {};
+  try {
+    const url = new URL("https://app.photoos.in/api/marketplace/studios");
+    if (queryObj.city && queryObj.city !== "all") url.searchParams.set("city", queryObj.city);
+    if (queryObj.area && queryObj.area !== "all") url.searchParams.set("area", queryObj.area);
+    if (queryObj.category && queryObj.category !== "All") url.searchParams.set("category", queryObj.category);
+    if (queryObj.search) url.searchParams.set("search", queryObj.search);
+
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.studios) return data.studios;
+    }
+  } catch (err) {
+    console.warn("[ClientAppService] Direct marketplace fetch notice:", err);
+  }
+
   return photoosRequest("get-client-marketplace-studios", {
     method: "POST",
-    body: JSON.stringify({
-      limit,
-    }),
+    body: JSON.stringify(queryObj),
   });
 }
 

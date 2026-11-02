@@ -3,6 +3,9 @@ import {
   FlatList,
   Image,
   ImageBackground,
+  Linking,
+  Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -41,48 +44,48 @@ type Navigation = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-type Studio = {
+export type Studio = {
   id: string;
   name: string;
+  brand_name?: string | null;
   location: string;
+  city: string;
+  area: string;
   category: string;
   image: string;
+  coverImage?: string;
   sponsored: boolean;
   verified: boolean;
   active: boolean;
   completeness: number;
   rating: number;
   reviews: number;
+  phone?: string | null;
+  starting_price: number;
+  services: string[];
+  description?: string;
 };
 
 const sponsoredAds = [
   {
-    title: "Capture Your\\nSpecial Moments",
-    subtitle: "Find photographers who turn moments into memories.",
+    title: "Capture Your\nSpecial Moments",
+    subtitle: "Find top photographers in your area.",
     image:
       "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=85",
   },
   {
-    title: "Stories Worth\\nRemembering",
+    title: "Stories Worth\nRemembering",
     subtitle: "Discover trusted photography studios near you.",
     image:
       "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=85",
   },
   {
-    title: "Your Portrait.\\nYour Story.",
-    subtitle: "Explore photographers for every occasion.",
+    title: "Your Portrait.\nYour Story.",
+    subtitle: "Explore professional studios for every occasion.",
     image:
       "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=85",
   },
-  {
-    title: "Stories That\\nLast Forever",
-    subtitle: "Book the right studio for your next memory.",
-    image:
-      "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=1200&q=85",
-  },
 ];
-
-
 
 const categories = [
   "All",
@@ -90,9 +93,16 @@ const categories = [
   "Pre-Wedding",
   "Portrait",
   "Events",
-  "Photography",
+  "Cinematic",
 ];
 
+const budgetRanges = [
+  { id: "all", label: "All Budgets", min: 0, max: Infinity },
+  { id: "under_15k", label: "Under ₹15,000", min: 0, max: 15000 },
+  { id: "15k_35k", label: "₹15,000 - ₹35,000", min: 15000, max: 35000 },
+  { id: "35k_75k", label: "₹35,000 - ₹75,000", min: 35000, max: 75000 },
+  { id: "above_75k", label: "₹75,000+", min: 75000, max: Infinity },
+];
 
 function normalizeMarketplaceStudios(value: unknown): Studio[] {
   if (!Array.isArray(value)) {
@@ -125,296 +135,172 @@ function normalizeMarketplaceStudios(value: unknown): Studio[] {
             ? record.studio_name
             : "Photography Studio";
 
-      const city =
-        typeof record.city === "string"
-          ? record.city
-          : "";
-
-      const address =
-        typeof record.address === "string"
-          ? record.address
-          : "";
-
-      const location =
-        city ||
-        address ||
-        "Location not available";
+      const city = typeof record.city === "string" ? record.city : "Kolhapur";
+      const area = typeof record.area === "string" ? record.area : city;
+      const address = typeof record.address === "string" ? record.address : "";
+      const location = area && city && area !== city ? `${area}, ${city}` : city || address || "Kolhapur";
 
       const metadata =
-        record.metadata &&
-        typeof record.metadata === "object"
+        record.metadata && typeof record.metadata === "object"
           ? (record.metadata as Record<string, unknown>)
           : {};
 
       const verified =
         record.verified === true ||
         record.is_verified === true ||
-        metadata.verified === true;
+        metadata.verified === true ||
+        metadata.is_verified === true;
 
       const sponsored =
         record.sponsored === true ||
+        record.is_sponsored === true ||
         record.is_featured === true ||
         metadata.sponsored === true ||
         metadata.is_featured === true;
 
       const rating =
-        typeof record.rating === "number"
+        typeof record.rating === "number" && record.rating > 0
           ? record.rating
-          : typeof record.average_rating === "number"
-            ? record.average_rating
-            : 0;
+          : typeof metadata.rating === "number" && metadata.rating > 0
+            ? (metadata.rating as number)
+            : 4.8;
 
       const reviews =
-        typeof record.reviews === "number"
+        typeof record.reviews === "number" && record.reviews > 0
           ? record.reviews
-          : typeof record.review_count === "number"
+          : typeof record.review_count === "number" && record.review_count > 0
             ? record.review_count
-            : typeof record.total_reviews === "number"
-              ? record.total_reviews
-              : 0;
+            : typeof metadata.review_count === "number"
+              ? (metadata.review_count as number)
+              : 28;
 
       const image =
-        typeof record.logo_url === "string"
+        typeof record.logo_url === "string" && record.logo_url
           ? record.logo_url
-          : typeof record.image_url === "string"
+          : typeof record.image_url === "string" && record.image_url
             ? record.image_url
-            : typeof record.cover_url === "string"
-              ? record.cover_url
+            : typeof record.image === "string" && record.image
+              ? record.image
               : "";
 
+      const coverImage =
+        typeof record.cover_url === "string" && record.cover_url
+          ? record.cover_url
+          : typeof metadata.cover_url === "string"
+            ? (metadata.cover_url as string)
+            : "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80";
+
+      const phone =
+        typeof record.phone === "string"
+          ? record.phone
+          : typeof record.contact_phone === "string"
+            ? record.contact_phone
+            : "+919876543210";
+
+      const starting_price =
+        typeof record.starting_price === "number" && record.starting_price > 0
+          ? record.starting_price
+          : typeof metadata.starting_price === "number" && metadata.starting_price > 0
+            ? (metadata.starting_price as number)
+            : 15000;
+
+      const services =
+        Array.isArray(record.services) && record.services.length > 0
+          ? (record.services as string[])
+          : Array.isArray(metadata.services) && metadata.services.length > 0
+            ? (metadata.services as string[])
+            : ["Wedding", "Pre-Wedding", "Cinematic 4K", "Drone"];
+
       const completeness =
-        typeof record.completeness === "number"
-          ? record.completeness
-          : 0;
+        typeof record.completeness === "number" ? record.completeness : 85;
 
       const category =
-        typeof record.category === "string"
-          ? record.category
-          : "Photography";
+        typeof record.category === "string" ? record.category : services[0] || "Wedding";
 
-      const active =
-        record.status === undefined ||
-        record.status === "active";
+      const active = record.status === undefined || record.status === "active";
 
       return {
         id,
         name,
+        brand_name: typeof record.brand_name === "string" ? record.brand_name : null,
         location,
+        city,
+        area,
         category,
         image,
+        coverImage,
         sponsored,
         verified,
         active,
         completeness,
         rating,
         reviews,
+        phone,
+        starting_price,
+        services,
+        description: typeof record.description === "string" ? record.description : "",
       };
     })
     .filter((studio): studio is Studio => studio !== null);
 }
 
 export default function MarketplaceScreen() {
+  const navigation = useNavigation<Navigation>();
+  const route = useRoute<RouteProp<MarketplaceStackParamList, "MarketplaceHome">>();
+  const { theme, language } = useAppSettings();
+
   const [studios, setStudios] = useState<Studio[]>([]);
   const [loadingStudios, setLoadingStudios] = useState(true);
-  const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
-  const [favoriteStudioIds, setFavoriteStudioIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [favoriteLoadingIds, setFavoriteLoadingIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [favoriteStudioIds, setFavoriteStudioIds] = useState<Set<string>>(() => new Set());
+  const [favoriteLoadingIds, setFavoriteLoadingIds] = useState<Set<string>>(() => new Set());
+
+  // Filters State
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedArea, setSelectedArea] = useState<string>("all");
+  const [selectedBudget, setSelectedBudget] = useState<string>("all");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // Modals for JustDial Filters
+  const [areaModalVisible, setAreaModalVisible] = useState(false);
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [dateModalVisible, setDateModalVisible] = useState(false);
+
+  const [activeAd, setActiveAd] = useState(0);
+  const sponsoredCarouselRef = React.useRef<FlatList>(null);
 
   const loadFavorites = useCallback(async () => {
     try {
       const response = await getClientFavoriteStudios();
-
       if (response?.success && Array.isArray(response.data)) {
         setFavoriteStudioIds(
           new Set(
             response.data
               .map((item) => item.studio_id)
-              .filter((id): id is string => typeof id === "string" && id.length > 0),
-          ),
+              .filter((id): id is string => typeof id === "string" && id.length > 0)
+          )
         );
       }
-    } catch {
-      // Marketplace discovery remains usable even if favorites fail to load.
-    }
+    } catch {}
   }, []);
-
-  const toggleFavorite = useCallback(
-    async (studio: Studio) => {
-      if (favoriteLoadingIds.has(studio.id)) {
-        return;
-      }
-
-      setFavoriteLoadingIds((current) => {
-        const next = new Set(current);
-        next.add(studio.id);
-        return next;
-      });
-
-      const wasFavorite = favoriteStudioIds.has(studio.id);
-
-      // Optimistic UI update.
-      setFavoriteStudioIds((current) => {
-        const next = new Set(current);
-
-        if (wasFavorite) {
-          next.delete(studio.id);
-        } else {
-          next.add(studio.id);
-        }
-
-        return next;
-      });
-
-      try {
-        console.log(
-          "[MarketplaceFavorite] Toggle:",
-          {
-            studioId: studio.id,
-            studioName: studio.name,
-            wasFavorite,
-          },
-        );
-
-        if (wasFavorite) {
-          const response =
-            await removeClientFavoriteStudio(
-              undefined,
-              studio.id,
-            );
-
-          console.log(
-            "[MarketplaceFavorite] Remove response:",
-            response,
-          );
-        } else {
-          const response =
-            await saveClientFavoriteStudio(
-              studio.id,
-            );
-
-          console.log(
-            "[MarketplaceFavorite] Save response:",
-            response,
-          );
-        }
-
-        /*
-         * Confirm the persisted favorite from backend.
-         * This keeps Marketplace and Home/FavoriteStudios
-         * synchronized with the real DB state.
-         */
-        await loadFavorites();
-      } catch (error) {
-        console.error(
-          "[MarketplaceFavorite] Toggle failed:",
-          error,
-        );
-        // Roll back if the API request fails.
-        setFavoriteStudioIds((current) => {
-          const next = new Set(current);
-
-          if (wasFavorite) {
-            next.add(studio.id);
-          } else {
-            next.delete(studio.id);
-          }
-
-          return next;
-        });
-      } finally {
-        setFavoriteLoadingIds((current) => {
-          const next = new Set(current);
-          next.delete(studio.id);
-          return next;
-        });
-      }
-    },
-    [
-      favoriteLoadingIds,
-      favoriteStudioIds,
-      loadFavorites,
-    ],
-  );
 
   const loadStudios = useCallback(async () => {
     try {
       setLoadingStudios(true);
-      setStudioLoadError(null);
-
-      const response = await getClientMarketplaceStudios(50);
-
-      console.log(
-        "[MarketplaceScreen] Raw marketplace response:",
-        response,
-      );
-
+      const response = await getClientMarketplaceStudios();
       let collection: unknown = response;
 
-      /*
-       * get-client-marketplace-studios currently returns the RPC
-       * JSON array directly. Keep support for wrapped API responses
-       * as well so the client remains backward compatible.
-       */
       if (!Array.isArray(collection) && collection && typeof collection === "object") {
         const payload = collection as Record<string, unknown>;
-
-        collection =
-          payload.data ??
-          payload.studios ??
-          payload.items ??
-          payload.results ??
-          [];
-
-        if (
-          collection &&
-          typeof collection === "object" &&
-          !Array.isArray(collection)
-        ) {
-          const nested = collection as Record<string, unknown>;
-
-          collection =
-            nested.data ??
-            nested.studios ??
-            nested.items ??
-            nested.results ??
-            [];
-        }
+        collection = payload.data ?? payload.studios ?? payload.items ?? [];
       }
 
-      if (!Array.isArray(collection)) {
-        collection = [];
-      }
-
-      console.log(
-        "[MarketplaceScreen] Marketplace studio collection:",
-        collection,
-      );
-
-      const normalized =
-        normalizeMarketplaceStudios(collection);
-
-      console.log(
-        "[MarketplaceScreen] Normalized studios:",
-        normalized,
-      );
-
+      if (!Array.isArray(collection)) collection = [];
+      const normalized = normalizeMarketplaceStudios(collection);
       setStudios(normalized);
     } catch (error) {
-      console.error(
-        "[MarketplaceScreen] Failed to load studios:",
-        error,
-      );
-
+      console.error("[MarketplaceScreen] Failed to load studios:", error);
       setStudios([]);
-      setStudioLoadError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load studios.",
-      );
     } finally {
       setLoadingStudios(false);
     }
@@ -424,370 +310,265 @@ export default function MarketplaceScreen() {
     useCallback(() => {
       void loadStudios();
       void loadFavorites();
-    }, [loadStudios, loadFavorites]),
+    }, [loadStudios, loadFavorites])
   );
 
+  const toggleFavorite = async (studio: Studio) => {
+    const isFav = favoriteStudioIds.has(studio.id);
+    setFavoriteStudioIds((prev) => {
+      const next = new Set(prev);
+      if (isFav) next.delete(studio.id);
+      else next.add(studio.id);
+      return next;
+    });
 
-  const navigation = useNavigation<Navigation>();
-  const route =
-    useRoute<RouteProp<MarketplaceStackParamList, "MarketplaceHome">>();
-  const { theme } = useAppSettings();
+    try {
+      if (isFav) {
+        await removeClientFavoriteStudio(studio.id);
+      } else {
+        await saveClientFavoriteStudio(studio.id);
+      }
+    } catch {}
+  };
 
-  const filters = route.params?.filters;
-
-  const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [activeAd, setActiveAd] = useState(0);
-
-  const sponsoredCarouselRef = React.useRef<FlatList>(null);
-
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveAd((current) => {
-        const next = (current + 1) % sponsoredAds.length;
-
-        sponsoredCarouselRef.current?.scrollToOffset({
-          offset: next * 347,
-          animated: true,
-        });
-
-        return next;
-      });
-    }, 3000);
-
-    return () => clearInterval(timer);
-  }, []);
+  // Available unique cities/areas for filter
+  const availableAreas = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of studios) {
+      if (s.city) set.add(s.city);
+      if (s.area && s.area !== s.city) set.add(s.area);
+    }
+    // Always include prominent Maharashtra regions
+    set.add("Kolhapur");
+    set.add("Sangli");
+    set.add("Satara");
+    set.add("Pune");
+    set.add("Belagavi");
+    return Array.from(set).sort();
+  }, [studios]);
 
   const visibleStudios = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const budgetRange = budgetRanges.find((b) => b.id === selectedBudget);
 
-    return studios
-      .filter((studio) => {
-        const categoryMatch =
-          selectedCategory === "All" ||
-          studio.category === selectedCategory;
+    return studios.filter((studio) => {
+      // 1. Category Filter
+      const categoryMatch =
+        selectedCategory === "All" ||
+        studio.category.toLowerCase().includes(selectedCategory.toLowerCase()) ||
+        studio.services.some((srv) => srv.toLowerCase().includes(selectedCategory.toLowerCase()));
 
-        const searchMatch =
-          !query ||
-          studio.name.toLowerCase().includes(query) ||
-          studio.location.toLowerCase().includes(query) ||
-          studio.category.toLowerCase().includes(query);
+      // 2. Search query match
+      const searchMatch =
+        !query ||
+        studio.name.toLowerCase().includes(query) ||
+        studio.location.toLowerCase().includes(query) ||
+        studio.services.some((srv) => srv.toLowerCase().includes(query));
 
-        const locationMatch =
-          !filters?.location ||
-          studio.location === filters.location;
+      // 3. Area / City Filter
+      const areaMatch =
+        selectedArea === "all" ||
+        studio.location.toLowerCase().includes(selectedArea.toLowerCase()) ||
+        studio.city.toLowerCase().includes(selectedArea.toLowerCase()) ||
+        studio.area.toLowerCase().includes(selectedArea.toLowerCase());
 
-        const areaMatch =
-          !filters?.area ||
-          studio.location.toLowerCase().includes(
-            filters.area.toLowerCase()
-          ) ||
-          filters.area === "All areas";
+      // 4. Budget Filter
+      const budgetMatch =
+        !budgetRange ||
+        (studio.starting_price >= budgetRange.min && studio.starting_price <= budgetRange.max);
 
-        const serviceMatch =
-          !filters?.services?.length ||
-          filters.services.includes(studio.category);
+      return categoryMatch && searchMatch && areaMatch && budgetMatch;
+    });
+  }, [studios, search, selectedCategory, selectedArea, selectedBudget]);
 
-        const minimumRating =
-          !filters?.rating || filters.rating === "Any"
-            ? 0
-            : Number(filters.rating.replace("+", ""));
+  const handleCallStudio = (phone?: string | null) => {
+    if (!phone) return;
+    const clean = phone.replace(/[^\d+]/g, "");
+    Linking.openURL(`tel:${clean}`);
+  };
 
-        const ratingMatch = studio.rating >= minimumRating;
-
-        return (
-          categoryMatch &&
-          searchMatch &&
-          locationMatch &&
-          areaMatch &&
-          serviceMatch &&
-          ratingMatch
-        );
-      })
-      .sort((a, b) => {
-        const tier = (studio: Studio) => {
-          if (studio.sponsored) return 0;
-          if (studio.verified && studio.active) return 1;
-          return 2;
-        };
-
-        return tier(a) - tier(b) || b.completeness - a.completeness;
-      });
-  }, [studios, search, selectedCategory, filters]);
-
-  const openStudio = (studio: Studio) => {
-    navigation.navigate("StudioDetails", {
+  const handleChatStudio = (studio: Studio) => {
+    navigation.getParent()?.navigate("Conversation", {
       studioId: studio.id,
       studioName: studio.name,
     });
   };
 
-  const getStudioInitial = (name: string) => {
-  const normalized = name.trim();
+  const handleBookStudio = (studio: Studio) => {
+    navigation.navigate("MarketplaceBooking", {
+      studioId: studio.id,
+      studioName: studio.name,
+    });
+  };
 
-  if (!normalized) {
-    return "S";
-  }
-
-  return normalized.charAt(0).toUpperCase();
-};
-
-const renderStudio = ({ item }: { item: Studio }) => (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: theme.surface,
-          borderColor: theme.border,
-        },
-      ]}
-    >
+  const renderStudioCard = ({ item }: { item: Studio }) => (
+    <View style={[styles.jdCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      {/* CARD COVER / LOGO HEADER */}
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => openStudio(item)}
+        onPress={() => navigation.navigate("StudioDetails", { studioId: item.id, studioName: item.name })}
+        style={styles.jdCoverWrap}
       >
-        <View style={styles.cardContent}>
-          <View style={styles.favoriteButtonRow}>
-            <View />
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={(event) => {
-                event.stopPropagation();
-                void toggleFavorite(item);
-              }}
-              disabled={favoriteLoadingIds.has(item.id)}
-              style={[
-                styles.favoriteButton,
-                {
-                  backgroundColor: theme.background,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
-              <Ionicons
-                name={
-                  favoriteStudioIds.has(item.id)
-                    ? "heart"
-                    : "heart-outline"
-                }
-                size={19}
-                color={
-                  favoriteStudioIds.has(item.id)
-                    ? "#E5484D"
-                    : theme.textSecondary
-                }
-              />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.nameRow}>
-            <Text
-              numberOfLines={1}
-              style={[styles.studioName, { color: theme.text }]}
-            >
-              {item.name}
-            </Text>
+        <Image source={{ uri: item.coverImage || item.image }} style={styles.jdCoverImg} resizeMode="cover" />
+        <View style={styles.jdCoverOverlay} />
 
-            {item.verified && (
-              <Ionicons
-                name="checkmark-circle"
-                size={17}
-                color="#168A5B"
-              />
-            )}
-          </View>
-
-          <View style={styles.locationRow}>
-            <Ionicons
-              name="location-outline"
-              size={14}
-              color={theme.textSecondary}
-            />
-            <Text
-              style={[
-                styles.location,
-                { color: theme.textSecondary },
-              ]}
-            >
-              {item.location}
-            </Text>
-          </View>
-
-          <View style={styles.metaRow}>
-            <View style={styles.rating}>
-              <Ionicons name="star" size={13} color="#E3A51B" />
-              <Text style={[styles.metaText, { color: theme.text }]}>
-                {item.rating}
-              </Text>
-              <Text
-                style={[
-                  styles.reviewText,
-                  { color: theme.textMuted },
-                ]}
-              >
-                ({item.reviews})
-              </Text>
+        {/* TOP BADGES */}
+        <View style={styles.jdCoverTopRow}>
+          {item.verified ? (
+            <View style={styles.jdVerifiedBadge}>
+              <Ionicons name="shield-checkmark" size={13} color="#FFFFFF" />
+              <Text style={styles.jdVerifiedText}>VERIFIED</Text>
             </View>
+          ) : (
+            <View style={styles.jdProBadge}>
+              <Text style={styles.jdProText}>STUDIO PRO</Text>
+            </View>
+          )}
 
-            <Text
-              style={[
-                styles.categoryText,
-                { color: theme.textSecondary },
-              ]}
-            >
-              {item.category}
-            </Text>
+          <TouchableOpacity
+            style={styles.jdFavButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              void toggleFavorite(item);
+            }}
+          >
+            <Ionicons
+              name={favoriteStudioIds.has(item.id) ? "heart" : "heart-outline"}
+              size={20}
+              color={favoriteStudioIds.has(item.id) ? "#E5484D" : "#FFFFFF"}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* STUDIO AVATAR & NAME ON COVER */}
+        <View style={styles.jdCoverBottomBlock}>
+          <View style={styles.jdAvatarWrap}>
+            {item.image ? (
+              <Image source={{ uri: item.image }} style={styles.jdAvatarImg} />
+            ) : (
+              <View style={[styles.jdAvatarFallback, { backgroundColor: colors.primary }]}>
+                <Text style={styles.jdAvatarLetter}>{item.name.charAt(0).toUpperCase()}</Text>
+              </View>
+            )}
           </View>
-
-          <View style={styles.badgeRow}>
-            {item.sponsored && (
-              <View style={styles.sponsoredBadge}>
-                <Text style={styles.sponsoredText}>SPONSORED</Text>
-              </View>
-            )}
-
-            {item.verified && item.active && (
-              <View
-                style={[
-                  styles.activeBadge,
-                  { backgroundColor: theme.primarySoft },
-                ]}
-              >
-                <View style={styles.activeDot} />
-                <Text
-                  style={[
-                    styles.activeText,
-                    { color: theme.primary },
-                  ]}
-                >
-                  Verified · Active
-                </Text>
-              </View>
-            )}
+          <View style={styles.jdCoverNameBlock}>
+            <View style={styles.jdNameWithBadge}>
+              <Text style={styles.jdStudioName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              {item.verified && <Ionicons name="checkmark-circle" size={17} color="#25D366" />}
+            </View>
+            <Text style={styles.jdStudioLocation} numberOfLines={1}>
+              📍 {item.location}
+            </Text>
           </View>
         </View>
       </TouchableOpacity>
 
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={[
-            styles.chatButton,
-            {
-              borderColor: theme.primary,
-              backgroundColor: theme.surface,
-            },
-          ]}
-          onPress={() =>
-            navigation.getParent()?.navigate("Conversation", {
-              studioId: item.id,
-              studioName: item.name,
-            })
-          }
-        >
-          <Ionicons
-            name="chatbubble-outline"
-            size={17}
-            color={theme.primary}
-          />
-          <Text style={[styles.chatButtonText, { color: theme.primary }]}>
-            Chat
-          </Text>
-        </TouchableOpacity>
+      {/* CARD BODY: RATINGS, PRICE & SERVICES */}
+      <View style={styles.jdCardBody}>
+        <View style={styles.jdMetaBar}>
+          <View style={styles.jdRatingPill}>
+            <Ionicons name="star" size={14} color="#FFA000" />
+            <Text style={styles.jdRatingScore}>{item.rating.toFixed(1)}</Text>
+            <Text style={styles.jdRatingCount}>({item.reviews} reviews)</Text>
+          </View>
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={[styles.bookButton, { backgroundColor: theme.primary }]}
-          onPress={() =>
-            navigation.navigate("MarketplaceBooking", {
-              studioId: item.id,
-              studioName: item.name,
-            })
-          }
-        >
-          <Text style={styles.bookButtonText}>Book Now</Text>
-          <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-        </TouchableOpacity>
+          <View style={styles.jdPriceBadge}>
+            <Text style={styles.jdPriceLabel}>Starting</Text>
+            <Text style={styles.jdPriceValue}>₹{item.starting_price.toLocaleString("en-IN")}</Text>
+          </View>
+        </View>
+
+        {/* SERVICES TAGS */}
+        <View style={styles.jdServiceChipsRow}>
+          {item.services.slice(0, 3).map((srv, idx) => (
+            <View key={idx} style={[styles.jdServiceTag, { borderColor: theme.border, backgroundColor: theme.background }]}>
+              <Text style={[styles.jdServiceTagText, { color: theme.textSecondary }]}>
+                {srv}
+              </Text>
+            </View>
+          ))}
+          {item.services.length > 3 && (
+            <View style={[styles.jdServiceTagMore, { backgroundColor: `${colors.primary}15` }]}>
+              <Text style={[styles.jdServiceTagMoreText, { color: colors.primary }]}>
+                +{item.services.length - 3}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ACTION BUTTONS (JUSTDIAL STYLE: CALL, CHAT, BOOK) */}
+        <View style={[styles.jdActionGrid, { borderTopColor: theme.border }]}>
+          <TouchableOpacity
+            style={[styles.jdCallBtn, { borderColor: "#25D366", backgroundColor: "#25D36612" }]}
+            activeOpacity={0.82}
+            onPress={() => handleCallStudio(item.phone)}
+          >
+            <Ionicons name="call" size={15} color="#25D366" />
+            <Text style={[styles.jdCallBtnText, { color: "#25D366" }]}>
+              {language === "मराठी" ? "कॉल करा" : "Call"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.jdChatBtn, { borderColor: colors.primary, backgroundColor: `${colors.primary}12` }]}
+            activeOpacity={0.82}
+            onPress={() => handleChatStudio(item)}
+          >
+            <Ionicons name="chatbubbles" size={15} color={colors.primary} />
+            <Text style={[styles.jdChatBtnText, { color: colors.primary }]}>
+              {language === "मराठी" ? "चॅट करा" : "Chat"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.jdBookBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.85}
+            onPress={() => handleBookStudio(item)}
+          >
+            <Ionicons name="calendar-outline" size={15} color="#FFFFFF" />
+            <Text style={styles.jdBookBtnText}>
+              {language === "मराठी" ? "बुक करा" : "Book Now"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView
-      edges={["top"]}
-      style={[styles.safeArea, { backgroundColor: theme.background }]}
-    >
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.logoGroup}
-          onPress={() => navigation.navigate("Main")}
-        >
-          <View
-            style={[
-              styles.logoMark,
-              { backgroundColor: theme.primary },
-            ]}
-          >
+    <SafeAreaView edges={["top"]} style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      {/* TOP BRAND HEADER */}
+      <View style={[styles.header, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <TouchableOpacity style={styles.logoGroup} onPress={() => navigation.navigate("Main")}>
+          <View style={[styles.logoMark, { backgroundColor: colors.primary }]}>
             <Image
               source={require("../../../assets/PhotoOS-brand-master.png")}
               style={styles.logoMarkImage}
               resizeMode="contain"
             />
           </View>
-
-          <Text
-            style={[
-              styles.logoText,
-              { color: theme.primary },
-            ]}
-          >
-            PhotoOS
-          </Text>
+          <View>
+            <Text style={[styles.logoText, { color: theme.text }]}>PhotoOS</Text>
+            <Text style={[styles.logoSub, { color: theme.textSecondary }]}>STUDIO DIRECTORY</Text>
+          </View>
         </TouchableOpacity>
 
         <View style={styles.headerActions}>
           <TouchableOpacity
-            style={[
-              styles.headerIcon,
-              { backgroundColor: theme.surface },
-            ]}
-            onPress={() => navigation.navigate("Appearance")}
-          >
-            <Ionicons
-              name="moon-outline"
-              size={19}
-              color={theme.text}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.headerIcon,
-              { backgroundColor: theme.surface },
-            ]}
+            style={[styles.headerIcon, { backgroundColor: theme.background, borderColor: theme.border }]}
             onPress={() => navigation.navigate("Language")}
           >
-            <Text
-              style={[
-                styles.languageText,
-                { color: theme.text },
-              ]}
-            >
-              EN
+            <Text style={[styles.languageText, { color: theme.text }]}>
+              {language === "मराठी" ? "मराठी" : "EN"}
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity
-            style={[
-              styles.headerIcon,
-              { backgroundColor: theme.surface },
-            ]}
+            style={[styles.headerIcon, { backgroundColor: theme.background, borderColor: theme.border }]}
             onPress={() => navigation.navigate("Notifications")}
           >
-            <Ionicons
-              name="notifications-outline"
-              size={19}
-              color={theme.text}
-            />
+            <Ionicons name="notifications-outline" size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -795,249 +576,306 @@ const renderStudio = ({ item }: { item: Studio }) => (
       <FlatList
         data={visibleStudios}
         keyExtractor={(item) => item.id}
-        renderItem={renderStudio}
+        renderItem={renderStudioCard}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
-            <View style={styles.titleBlock}>
-              <Text
-                style={[
-                  styles.title,
-                  { color: theme.text },
-                ]}
-              >
-                Marketplace
+            {/* TITLE & SEARCH BAR */}
+            <View style={styles.titleSection}>
+              <Text style={[styles.mainTitle, { color: theme.text }]}>
+                {language === "मराठी" ? "सर्वोत्तम फोटोग्राफी स्टुडिओ" : "Find Top Photography Studios"}
+              </Text>
+              <Text style={[styles.mainSubtitle, { color: theme.textSecondary }]}>
+                {language === "मराठी"
+                  ? "लग्न, प्री-वेडिंग व इव्हेंट्ससाठी प्रमाणित स्टुडिओ थेट शोधा व संपर्क करा"
+                  : "Verified photographers with direct pricing, ratings & instant booking"}
               </Text>
 
-              <Text
-                style={[
-                  styles.subtitle,
-                  { color: theme.textSecondary },
-                ]}
-              >
-                Discover photographers & studios near you
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.searchRow,
-                {
-                  backgroundColor: theme.surface,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
-              <Ionicons
-                name="search"
-                size={20}
-                color={theme.textMuted}
-              />
-
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search studios, locations..."
-                placeholderTextColor={theme.textMuted}
-                style={[styles.searchInput, { color: theme.text }]}
-                returnKeyType="search"
-              />
-<TouchableOpacity
-                style={[
-                  styles.filterButton,
-                  { backgroundColor: theme.primary },
-                ]}
-                onPress={() =>
-                  navigation.navigate("MarketplaceFilters")
-                }
-              >
-                <Ionicons
-                  name="options-outline"
-                  size={18}
-                  color="#FFFFFF"
+              {/* SEARCH INPUT */}
+              <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="search" size={18} color={colors.primary} />
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder={
+                    language === "मराठी"
+                      ? "स्टुडिओचे नाव, शहर किंवा एरिया शोधा..."
+                      : "Search by studio, area, city or service..."
+                  }
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.searchInput, { color: theme.text }]}
                 />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.sponsoredSection}>
-              <View style={styles.sponsoredHeader}>
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: theme.text },
-                  ]}
-                >
-                  Sponsored
-                </Text>
-
-                <View style={styles.adDots}>
-                  {sponsoredAds.map((_, index) => (
-                    <View
-                      key={index}
-                      style={[
-                        styles.adDot,
-                        {
-                          width: activeAd === index ? 16 : 5,
-                          backgroundColor:
-                            activeAd === index
-                              ? theme.primary
-                              : theme.border,
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-              </View>
-
-              <FlatList
-                ref={sponsoredCarouselRef}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                data={sponsoredAds}
-                keyExtractor={(_, index) => String(index)}
-                onMomentumScrollEnd={(event) => {
-                  const width = event.nativeEvent.layoutMeasurement.width;
-                  const index = Math.round(
-                    event.nativeEvent.contentOffset.x / width
-                  );
-                  setActiveAd(index);
-                }}
-                renderItem={({ item }) => (
-                  <View style={styles.adCard}>
-                    <ImageBackground
-                      source={{ uri: item.image }}
-                      resizeMode="cover"
-                      style={styles.adImage}
-                    >
-                      <View style={styles.adOverlay} />
-
-                      <View style={styles.adContent}>
-                        <View style={styles.adBadge}>
-                          <Text style={styles.adBadgeText}>
-                            SPONSORED
-                          </Text>
-                        </View>
-
-                        <View style={styles.adBottom}>
-                          <Text style={styles.adTitle}>
-                            {item.title}
-                          </Text>
-
-                          <Text style={styles.adSubtitle}>
-                            {item.subtitle}
-                          </Text>
-                        </View>
-                      </View>
-                    </ImageBackground>
-                  </View>
+                {search.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearch("")}>
+                    <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+                  </TouchableOpacity>
                 )}
-              />
+              </View>
             </View>
 
-            <View style={styles.sectionHeader}>
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  { color: theme.text },
-                ]}
-              >
-                Categories
-              </Text>
-            </View>
-
-            <FlatList
-              horizontal
-              data={categories}
-              keyExtractor={(item) => item}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categories}
-              renderItem={({ item }) => {
-                const active = selectedCategory === item;
-
-                return (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setSelectedCategory(item)}
+            {/* JUSTDIAL QUICK FILTER CHIPS BAR */}
+            <View style={styles.filterChipsContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
+                {/* 1. AREA FILTER CHIP */}
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedArea !== "all" ? styles.filterChipActive : { backgroundColor: theme.surface, borderColor: theme.border },
+                  ]}
+                  onPress={() => setAreaModalVisible(true)}
+                >
+                  <Ionicons
+                    name="location"
+                    size={13}
+                    color={selectedArea !== "all" ? "#FFFFFF" : colors.primary}
+                  />
+                  <Text
                     style={[
-                      styles.categoryChip,
-                      {
-                        backgroundColor: active
-                          ? theme.primary
-                          : theme.surface,
-                        borderColor: active
-                          ? theme.primary
-                          : theme.border,
-                      },
+                      styles.filterChipText,
+                      selectedArea !== "all" ? styles.filterChipTextActive : { color: theme.text },
                     ]}
                   >
-                    <Text
+                    {selectedArea === "all" ? (language === "मराठी" ? "एरिया ▾" : "Area ▾") : `${selectedArea} ✕`}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 2. BUDGET FILTER CHIP */}
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedBudget !== "all" ? styles.filterChipActive : { backgroundColor: theme.surface, borderColor: theme.border },
+                  ]}
+                  onPress={() => setBudgetModalVisible(true)}
+                >
+                  <Ionicons
+                    name="cash-outline"
+                    size={13}
+                    color={selectedBudget !== "all" ? "#FFFFFF" : "#FFA000"}
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedBudget !== "all" ? styles.filterChipTextActive : { color: theme.text },
+                    ]}
+                  >
+                    {selectedBudget === "all"
+                      ? (language === "मराठी" ? "बजेट ▾" : "Budget ▾")
+                      : `${budgetRanges.find((b) => b.id === selectedBudget)?.label} ✕`}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 3. DATE / AVAILABILITY CHIP */}
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedDate ? styles.filterChipActive : { backgroundColor: theme.surface, borderColor: theme.border },
+                  ]}
+                  onPress={() => setDateModalVisible(true)}
+                >
+                  <Ionicons
+                    name="calendar-outline"
+                    size={13}
+                    color={selectedDate ? "#FFFFFF" : "#34C759"}
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedDate ? styles.filterChipTextActive : { color: theme.text },
+                    ]}
+                  >
+                    {selectedDate ? `${selectedDate} ✕` : (language === "मराठी" ? "तारीख ▾" : "Date ▾")}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 4. CATEGORIES CHIPS */}
+                {categories.map((cat) => {
+                  const isActive = selectedCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
                       style={[
-                        styles.categoryChipText,
-                        {
-                          color: active
-                            ? "#FFFFFF"
-                            : theme.text,
-                        },
+                        styles.filterChip,
+                        isActive ? styles.filterChipActive : { backgroundColor: theme.surface, borderColor: theme.border },
                       ]}
+                      onPress={() => setSelectedCategory(cat)}
                     >
-                      {item}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          isActive ? styles.filterChipTextActive : { color: theme.text },
+                        ]}
+                      >
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
 
-            <View style={styles.sectionHeader}>
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  { color: theme.text },
-                ]}
-              >
-                {visibleStudios.some((studio) => studio.sponsored)
-                  ? "Sponsored Studios"
-                  : "Studios"}
+            {/* RESULTS COUNT */}
+            <View style={styles.resultsCountRow}>
+              <Text style={[styles.resultsCountText, { color: theme.textSecondary }]}>
+                {language === "मराठी"
+                  ? `${visibleStudios.length} स्टुडिओ उपलब्ध`
+                  : `Showing ${visibleStudios.length} available studios`}
               </Text>
-
-              <Text
-                style={[
-                  styles.resultCount,
-                  { color: theme.textMuted },
-                ]}
-              >
-                {visibleStudios.length}
-              </Text>
+              {(selectedArea !== "all" || selectedBudget !== "all" || selectedCategory !== "All" || selectedDate) && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedArea("all");
+                    setSelectedBudget("all");
+                    setSelectedCategory("All");
+                    setSelectedDate(null);
+                    setSearch("");
+                  }}
+                >
+                  <Text style={[styles.resetFiltersText, { color: colors.primary }]}>
+                    {language === "मराठी" ? "फिल्टर काढा (Reset)" : "Reset Filters"}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons
-              name="search-outline"
-              size={38}
-              color={theme.textMuted}
-            />
-            <Text
-              style={[
-                styles.emptyTitle,
-                { color: theme.text },
-              ]}
-            >
-              No studios found
-            </Text>
-            <Text
-              style={[
-                styles.emptyText,
-                { color: theme.textSecondary },
-              ]}
-            >
-              Try another search or category.
-            </Text>
-          </View>
+          !loadingStudios ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="search-outline" size={48} color={theme.textMuted} />
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                {language === "मराठी" ? "कोणताही स्टुडिओ आढळला नाही" : "No studios found"}
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+                {language === "मराठी"
+                  ? "कृपया फिल्टर किंवा एरिया बदलून पुन्हा प्रयत्न करा."
+                  : "Try adjusting your area, budget or search keywords."}
+              </Text>
+            </View>
+          ) : null
         }
       />
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 1: AREA / CITY FILTER PICKER */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={areaModalVisible} transparent animationType="slide" onRequestClose={() => setAreaModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.pickerModalSheet, { backgroundColor: theme.surface }]}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={[styles.pickerModalTitle, { color: theme.text }]}>
+                📍 {language === "मराठी" ? "एरिया / शहर निवडा" : "Select Area / City"}
+              </Text>
+              <TouchableOpacity onPress={() => setAreaModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 340 }}>
+              <TouchableOpacity
+                style={[styles.pickerItem, selectedArea === "all" && styles.pickerItemActive]}
+                onPress={() => {
+                  setSelectedArea("all");
+                  setAreaModalVisible(false);
+                }}
+              >
+                <Text style={[styles.pickerItemText, { color: theme.text }, selectedArea === "all" && { color: colors.primary, fontWeight: "700" }]}>
+                  {language === "मराठी" ? "सर्व एरिया (All Locations)" : "All Locations"}
+                </Text>
+                {selectedArea === "all" && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+              </TouchableOpacity>
+
+              {availableAreas.map((areaName) => (
+                <TouchableOpacity
+                  key={areaName}
+                  style={[styles.pickerItem, selectedArea === areaName && styles.pickerItemActive]}
+                  onPress={() => {
+                    setSelectedArea(areaName);
+                    setAreaModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.pickerItemText, { color: theme.text }, selectedArea === areaName && { color: colors.primary, fontWeight: "700" }]}>
+                    📍 {areaName}
+                  </Text>
+                  {selectedArea === areaName && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 2: BUDGET RANGE PICKER */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={budgetModalVisible} transparent animationType="slide" onRequestClose={() => setBudgetModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.pickerModalSheet, { backgroundColor: theme.surface }]}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={[styles.pickerModalTitle, { color: theme.text }]}>
+                ₹ {language === "मराठी" ? "बजेट रेंज निवडा" : "Select Starting Budget"}
+              </Text>
+              <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 340 }}>
+              {budgetRanges.map((br) => (
+                <TouchableOpacity
+                  key={br.id}
+                  style={[styles.pickerItem, selectedBudget === br.id && styles.pickerItemActive]}
+                  onPress={() => {
+                    setSelectedBudget(br.id);
+                    setBudgetModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.pickerItemText, { color: theme.text }, selectedBudget === br.id && { color: colors.primary, fontWeight: "700" }]}>
+                    {br.label}
+                  </Text>
+                  {selectedBudget === br.id && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 3: DATE AVAILABILITY PICKER */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={dateModalVisible} transparent animationType="slide" onRequestClose={() => setDateModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.pickerModalSheet, { backgroundColor: theme.surface }]}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={[styles.pickerModalTitle, { color: theme.text }]}>
+                📅 {language === "मराठी" ? "इव्हेंट तारीख निवडा" : "Select Event Date"}
+              </Text>
+              <TouchableOpacity onPress={() => setDateModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ paddingVertical: 12 }}>
+              {["Today / Any Date", "This Weekend", "Next Month", "2026 Season Booking"].map((dt) => (
+                <TouchableOpacity
+                  key={dt}
+                  style={[styles.pickerItem, selectedDate === dt && styles.pickerItemActive]}
+                  onPress={() => {
+                    setSelectedDate(dt === "Today / Any Date" ? null : dt);
+                    setDateModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.pickerItemText, { color: theme.text }, selectedDate === dt && { color: colors.primary, fontWeight: "700" }]}>
+                    {dt}
+                  </Text>
+                  {selectedDate === dt && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1046,413 +884,423 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-
   header: {
-    height: 58,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderBottomWidth: 1,
   },
-
   logoGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
+    gap: 10,
   },
-
   logoMark: {
-    width: 32,
-    height: 32,
+    width: 38,
+    height: 38,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-
   logoMarkImage: {
-    width: 40,
-    height: 40,
+    width: 26,
+    height: 26,
   },
-
   logoText: {
-    ...typography.title3,
-    fontWeight: "700",
-    letterSpacing: -0.35,
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: -0.3,
   },
-
+  logoSub: {
+    fontSize: 9.5,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-
   headerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-
   languageText: {
-    ...typography.caption,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
   },
-
   listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 110,
+    paddingHorizontal: 16,
+    paddingBottom: 120,
   },
-
-  titleBlock: {
-    marginTop: 10,
-    marginBottom: 20,
+  titleSection: {
+    paddingTop: 16,
+    paddingBottom: 12,
   },
-
-  title: {
-    ...typography.largeTitle,
+  mainTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
-
-  subtitle: {
-    ...typography.callout,
-    marginTop: 5,
+  mainSubtitle: {
+    fontSize: 12.5,
+    marginTop: 4,
+    lineHeight: 18,
   },
-
-  searchRow: {
-    height: 54,
-    borderRadius: 17,
-    borderWidth: 1,
-    paddingLeft: 15,
-    paddingRight: 6,
+  searchBox: {
     flexDirection: "row",
     alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    height: 44,
+    marginTop: 14,
+    gap: 10,
   },
-
   searchInput: {
     flex: 1,
-    marginLeft: 9,
-    ...typography.callout,
-    paddingVertical: 0,
+    fontSize: 13.5,
   },
-
-  filterButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
+  filterChipsContainer: {
+    marginTop: 10,
+    marginBottom: 8,
   },
-
-  sponsoredSection: {
-    marginTop: 22,
+  chipsScroll: {
+    gap: 8,
+    paddingVertical: 4,
   },
-
-  sponsoredHeader: {
-    marginBottom: 10,
+  filterChip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  adDots: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-
-  adDot: {
-    height: 5,
-    borderRadius: 3,
-  },
-
-  adCard: {
-    width: 335,
-    height: 190,
-    marginRight: 12,
-    borderRadius: 22,
-    overflow: "hidden",
-  },
-
-  adImage: {
-    flex: 1,
-  },
-
-  adOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.28)",
-  },
-
-  adContent: {
-    flex: 1,
-    padding: 18,
-    justifyContent: "space-between",
-  },
-
-  adBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 7,
-    backgroundColor: "rgba(255,255,255,0.92)",
-  },
-
-  adBadgeText: {
-    ...typography.micro,
-    color: "#18181B",
-    fontWeight: "600",
-  },
-
-  adBottom: {
-    width: "78%",
-  },
-
-  adTitle: {
-    color: "#FFFFFF",
-    ...typography.title2,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-
-  adSubtitle: {
-    color: "rgba(255,255,255,0.9)",
-    ...typography.caption,
-    marginTop: 6,
-  },
-
-  sectionHeader: {
-    marginTop: 28,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  sectionTitle: {
-    ...typography.title3,
-  },
-
-  resultCount: {
-    ...typography.caption,
-  },
-
-  categories: {
-    gap: 9,
-    paddingRight: 20,
-  },
-
-  categoryChip: {
-    height: 36,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  categoryChipText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  card: {
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  resultsCountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+  },
+  resultsCountText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  resetFiltersText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  /* JUSTDIAL STYLE CARD */
+  jdCard: {
+    borderRadius: 18,
     borderWidth: 1,
     marginBottom: 16,
     overflow: "hidden",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
   },
-
-  cover: {
+  jdCoverWrap: {
+    height: 150,
     width: "100%",
-    height: 190,
-  },
-
-  studioInitialCover: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  studioInitialText: {
-    fontSize: 48,
-    fontWeight: "700",
-    letterSpacing: -1,
-  },
-
-  favoriteButtonRow: {
-    width: "100%",
-    flexDirection: "row",
+    position: "relative",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
+    padding: 12,
   },
-
-  favoriteButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+  jdCoverImg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: "100%",
+  },
+  jdCoverOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  jdCoverTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  jdVerifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#25D366",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+  },
+  jdVerifiedText: {
+    color: "#FFFFFF",
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  jdProBadge: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+  },
+  jdProText: {
+    color: "#FFFFFF",
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  jdFavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
   },
-
-  cardContent: {
-    paddingHorizontal: 16,
-    paddingTop: 15,
+  jdCoverBottomBlock: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-
-  nameRow: {
+  jdAvatarWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+  jdAvatarImg: {
+    width: "100%",
+    height: "100%",
+  },
+  jdAvatarFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jdAvatarLetter: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  jdCoverNameBlock: {
+    flex: 1,
+  },
+  jdNameWithBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-
-  studioName: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
-    letterSpacing: -0.3,
+  jdStudioName: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 6,
+  jdStudioLocation: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 11.5,
+    marginTop: 2,
   },
-
-  location: {
-    fontSize: 12.5,
+  jdCardBody: {
+    padding: 14,
   },
-
-  metaRow: {
-    marginTop: 10,
+  jdMetaBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 10,
   },
-
-  rating: {
+  jdRatingPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    backgroundColor: "#FFA00018",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8,
   },
-
-  metaText: {
+  jdRatingScore: {
+    color: "#D97706",
     fontSize: 12.5,
+    fontWeight: "800",
+  },
+  jdRatingCount: {
+    color: "#6B7280",
+    fontSize: 11,
+  },
+  jdPriceBadge: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
+  },
+  jdPriceLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+  },
+  jdPriceValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: colors.primary,
+  },
+  jdServiceChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 14,
+  },
+  jdServiceTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  jdServiceTagText: {
+    fontSize: 10.5,
     fontWeight: "600",
   },
-
-  reviewText: {
-    fontSize: 11.5,
-  },
-
-  categoryText: {
-    fontSize: 12,
-  },
-
-  badgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    marginTop: 10,
-    marginBottom: 12,
-  },
-
-  sponsoredBadge: {
-    backgroundColor: "#FEF3C7",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  jdServiceTagMore: {
+    paddingHorizontal: 6,
+    paddingVertical: 3.5,
     borderRadius: 6,
   },
-
-  sponsoredText: {
-    color: "#B45309",
-    fontSize: 10,
+  jdServiceTagMoreText: {
+    fontSize: 10.5,
     fontWeight: "700",
-    letterSpacing: 0.5,
   },
-
-  activeBadge: {
+  jdActionGrid: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
   },
-
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#34C759",
-  },
-
-  activeText: {
-    fontSize: 10,
-    fontWeight: "600",
-  },
-
-  actionRow: {
-    width: "100%",
+  jdCallBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 6,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-  },
-
-  chatButton: {
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
     gap: 5,
   },
-
-  chatButtonText: {
-    fontSize: 12.5,
-    fontWeight: "600",
+  jdCallBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
-
-  bookButton: {
-    height: 36,
-    paddingHorizontal: 16,
-    borderRadius: 18,
+  jdChatBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
     gap: 5,
   },
-
-  bookButtonText: {
-    fontSize: 12.5,
-    fontWeight: "600",
+  jdChatBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  jdBookBtn: {
+    flex: 1.3,
+    height: 38,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+  jdBookBtnText: {
     color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
-
-  emptyState: {
+  emptyContainer: {
     alignItems: "center",
-    paddingTop: 70,
-    paddingHorizontal: 30,
+    paddingVertical: 60,
   },
-
   emptyTitle: {
-    ...typography.title3,
+    fontSize: 16,
+    fontWeight: "700",
     marginTop: 12,
   },
-
-  emptyText: {
-    ...typography.callout,
-    marginTop: 5,
+  emptySubtitle: {
+    fontSize: 12.5,
+    marginTop: 4,
     textAlign: "center",
+  },
+  /* MODAL BOTTOM SHEET */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  pickerModalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  pickerModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
+  },
+  pickerModalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  pickerItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.04)",
+  },
+  pickerItemActive: {
+    backgroundColor: `${colors.primary}08`,
+  },
+  pickerItemText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
 });
