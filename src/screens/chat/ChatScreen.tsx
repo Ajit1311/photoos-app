@@ -103,8 +103,40 @@ export default function ChatScreen() {
   // Strict Event & Studio Scoping:
   // Shows event admin / event studio chat, while keeping all marketplace studio conversations accessible!
   const displayedChats = useMemo(() => {
-    return chats;
-  }, [chats]);
+    return chats.map((chat) => {
+      // In CLIENT app: The chat title MUST be the Studio's name, NEVER client's name!
+      // If the chat title is "raju patil" or client/event name, replace with activeEvent studioName
+      const isClientOrEventName =
+        chat.title.toLowerCase().includes("raju") ||
+        (activeEvent && (
+          chat.title.toLowerCase() === activeEvent.eventName.toLowerCase() ||
+          activeEvent.eventName.toLowerCase().includes(chat.title.toLowerCase())
+        ));
+
+      if (isClientOrEventName && activeEvent?.studioName) {
+        return {
+          ...chat,
+          title: activeEvent.studioName,
+        };
+      }
+      return chat;
+    });
+  }, [chats, activeEvent]);
+
+  const hasChatWithActiveStudio = useMemo(() => {
+    if (!activeEvent) return false;
+    const targetStudio = (activeEvent.studioName || "").toLowerCase().trim();
+    const targetId = (activeEvent.studioId || activeEvent.eventId || "").toLowerCase().trim();
+
+    return displayedChats.some((c) => {
+      const cTitle = (c.title || "").toLowerCase().trim();
+      const cId = (c.conversationId || c.id || "").toLowerCase().trim();
+      return (
+        (targetStudio && (cTitle === targetStudio || cTitle.includes(targetStudio))) ||
+        (targetId && (cId === targetId || cId.includes(targetId)))
+      );
+    });
+  }, [activeEvent, displayedChats]);
 
   const title =
     language === "मराठी"
@@ -235,7 +267,7 @@ export default function ChatScreen() {
           }
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            activeEvent ? (
+            activeEvent && !hasChatWithActiveStudio ? (
               <TouchableOpacity
                 activeOpacity={0.88}
                 onPress={() =>
@@ -326,6 +358,12 @@ export default function ChatScreen() {
               (activeEvent?.type === "corporate" &&
                 (item.id.includes(activeEvent.eventId) || item.title.includes(activeEvent.eventName)));
 
+            const isActiveEventStudio =
+              activeEvent &&
+              activeEvent.type !== "corporate" &&
+              activeEvent.studioName &&
+              item.title.toLowerCase().includes(activeEvent.studioName.toLowerCase());
+
             return (
               <TouchableOpacity
                 activeOpacity={0.78}
@@ -342,14 +380,24 @@ export default function ChatScreen() {
                   style={[
                     styles.avatar,
                     {
-                      backgroundColor: isCorporateChat ? "#2563EB18" : `${theme.primary}18`,
+                      backgroundColor: isCorporateChat
+                        ? "#2563EB18"
+                        : isActiveEventStudio
+                          ? "#00a88418"
+                          : `${theme.primary}18`,
                     },
                   ]}
                 >
                   <Text
                     style={[
                       styles.avatarText,
-                      { color: isCorporateChat ? "#2563EB" : theme.primary },
+                      {
+                        color: isCorporateChat
+                          ? "#2563EB"
+                          : isActiveEventStudio
+                            ? "#00a884"
+                            : theme.primary,
+                      },
                     ]}
                   >
                     {isCorporateChat ? "🏢" : item.title.trim().charAt(0).toUpperCase()}
@@ -369,18 +417,36 @@ export default function ChatScreen() {
                         style={[
                           styles.chatTypeBadge,
                           {
-                            backgroundColor: isCorporateChat ? "#2563EB15" : `${theme.primary}12`,
-                            borderColor: isCorporateChat ? "#2563EB40" : `${theme.primary}35`,
+                            backgroundColor: isCorporateChat
+                              ? "#2563EB15"
+                              : isActiveEventStudio
+                                ? "#00a88415"
+                                : `${theme.primary}12`,
+                            borderColor: isCorporateChat
+                              ? "#2563EB40"
+                              : isActiveEventStudio
+                                ? "#00a88440"
+                                : `${theme.primary}35`,
                           },
                         ]}
                       >
                         <Text
                           style={[
                             styles.chatTypeBadgeText,
-                            { color: isCorporateChat ? "#2563EB" : theme.primary },
+                            {
+                              color: isCorporateChat
+                                ? "#2563EB"
+                                : isActiveEventStudio
+                                  ? "#00a884"
+                                  : theme.primary,
+                            },
                           ]}
                         >
-                          {isCorporateChat ? "HR Admin" : "Studio"}
+                          {isCorporateChat
+                            ? "HR Admin"
+                            : isActiveEventStudio
+                              ? (language === "मराठी" ? "📸 इव्हेंट स्टुडिओ" : "📸 Event Studio")
+                              : "Studio"}
                         </Text>
                       </View>
                     </View>
