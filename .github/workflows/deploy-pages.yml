@@ -25,19 +25,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
 
       - name: Install dependencies
-        working-directory: frontend
-        run: npm ci || npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: Export Web App Bundle
-        working-directory: frontend
         env:
-          EXPO_PUBLIC_PHOTOOS_API_URL: https://app.photoos.in/api
-          EXPO_PUBLIC_SUPABASE_URL: https://app.photoos.in
-          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+          EXPO_PUBLIC_SUPABASE_URL: "https://app.photoos.in"
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
+          EXPO_PUBLIC_PHOTOOS_API_URL: "https://app.photoos.in/api"
         run: npx expo export -p web
 
       - name: Setup GitHub Pages
@@ -46,7 +43,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'frontend/dist'
+          path: 'dist'
 
   deploy:
     name: Deploy to GitHub Pages
@@ -59,4 +56,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
