@@ -157,27 +157,12 @@ export function loadImageElement(source: string | HTMLImageElement): Promise<HTM
     });
   }
 
-  const isLocalOrDirect =
-    source.startsWith("data:") ||
-    source.startsWith("blob:") ||
-    source.includes("photoos.in") ||
-    source.includes("supabase.co") ||
-    source.includes("supabase.in") ||
-    source.includes("r2.cloudflarestorage.com") ||
-    source.includes("firebasestorage.app") ||
-    source.includes("googleusercontent.com") ||
-    source.includes("unsplash.com");
-
-  // Only route through server proxy if third-party and cross-origin
+  const isDataOrBlob = source.startsWith("data:") || source.startsWith("blob:");
   let safeUrl = source;
-  if (!isLocalOrDirect && (source.startsWith("http://") || source.startsWith("https://"))) {
-    safeUrl = `https://app.photoos.in/api/storage/proxy?url=${encodeURIComponent(source)}`;
-  }
 
   return new Promise((resolve, reject) => {
     const img = new Image();
-    // Do NOT set crossOrigin on data: or blob: URIs (avoids iOS Safari / WebKit security failure)
-    if (!source.startsWith("data:") && !source.startsWith("blob:")) {
+    if (!isDataOrBlob) {
       img.crossOrigin = "anonymous";
     }
 
@@ -198,12 +183,11 @@ export function loadImageElement(source: string | HTMLImageElement): Promise<HTM
     img.onerror = () => {
       if (!timedOut) {
         clearTimeout(timeout);
-        // Fallback: retry with direct URL if proxy failed
-        if (safeUrl !== source) {
+        // Fallback: If direct load failed (e.g. CORS), retry via storage proxy which guarantees CORS headers
+        if (!isDataOrBlob && !source.includes("/api/storage/proxy")) {
+          const proxyUrl = `https://app.photoos.in/api/storage/proxy?url=${encodeURIComponent(source)}`;
           const retryImg = new Image();
-          if (!source.startsWith("data:") && !source.startsWith("blob:")) {
-            retryImg.crossOrigin = "anonymous";
-          }
+          retryImg.crossOrigin = "anonymous";
           const retryTimeout = setTimeout(() => {
             retryImg.src = "";
             reject(new Error(`Failed to load image: ${source}`));
@@ -213,11 +197,11 @@ export function loadImageElement(source: string | HTMLImageElement): Promise<HTM
             clearTimeout(retryTimeout);
             resolve(retryImg);
           };
-          retryImg.onerror = (e) => {
+          retryImg.onerror = () => {
             clearTimeout(retryTimeout);
             reject(new Error(`Failed to load image: ${source}`));
           };
-          retryImg.src = source;
+          retryImg.src = proxyUrl;
         } else {
           reject(new Error(`Failed to load image: ${source}`));
         }

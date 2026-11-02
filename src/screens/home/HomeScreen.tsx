@@ -358,7 +358,9 @@ export default function HomeScreen() {
             </Text>
 
             <Text style={[styles.eventStudioText, { color: theme.textSecondary, marginBottom: 8 }]}>
-              📍 {activeEvent.studioName || (activeEvent.type === "corporate" ? "Corporate Office" : "Photo Studio")}
+              {activeEvent.type === "corporate"
+                ? `🏢 ${activeEvent.studioName || "Corporate Office"} (HR Admin)`
+                : `📍 ${activeEvent.studioName || "Photo Studio"}`}
             </Text>
 
             {/* EVENT PHOTOS PREVIEW STRIP */}
@@ -452,14 +454,14 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={16} color={colors.primary} />
             </TouchableOpacity>
 
-            {/* ACTION 3: DIRECT CHAT WITH STUDIO (WHATSAPP-CONNECTED) */}
+            {/* ACTION 3: CHAT (CORPORATE ADMIN / STUDIO) */}
             <TouchableOpacity
               activeOpacity={0.88}
               style={[
                 styles.eventBrowseAllButton,
                 {
-                  borderColor: "#00a884",
-                  backgroundColor: "#00a88415",
+                  borderColor: activeEvent.type === "corporate" ? "#2563EB" : "#00a884",
+                  backgroundColor: activeEvent.type === "corporate" ? "#2563EB15" : "#00a88415",
                   marginTop: 8,
                 },
               ]}
@@ -467,21 +469,46 @@ export default function HomeScreen() {
                 navigation.navigate("Conversation", {
                   studioId: activeEvent.studioId || activeEvent.eventId,
                   studioName:
-                    activeEvent.studioName ||
-                    (activeEvent.type === "corporate" ? "Corporate Office" : "Photo Studio"),
-                  title: activeEvent.studioName || activeEvent.eventName,
+                    activeEvent.type === "corporate"
+                      ? (activeEvent.studioName ? `${activeEvent.studioName} (Admin)` : "Office Admin (HR)")
+                      : (activeEvent.studioName || "Photo Studio"),
+                  title:
+                    activeEvent.type === "corporate"
+                      ? "Chat with Admin"
+                      : (activeEvent.studioName || activeEvent.eventName),
+                  isCorporate: activeEvent.type === "corporate",
+                  eventName: activeEvent.eventName,
                 })
               }
             >
-              <Ionicons name="chatbubbles" size={18} color="#00a884" />
-              <Text style={[styles.eventBrowseAllText, { color: "#00a884" }]}>
-                {language === "मराठी"
-                  ? "💬 स्टुडिओशी थेट चॅट करा (Chat with Studio)"
-                  : language === "हिन्दी"
-                    ? "💬 स्टूडियो से सीधे चैट करें (Chat with Studio)"
-                    : "💬 Chat Directly with Studio"}
+              <Ionicons
+                name={activeEvent.type === "corporate" ? "people" : "chatbubbles"}
+                size={18}
+                color={activeEvent.type === "corporate" ? "#2563EB" : "#00a884"}
+              />
+              <Text
+                style={[
+                  styles.eventBrowseAllText,
+                  { color: activeEvent.type === "corporate" ? "#2563EB" : "#00a884" },
+                ]}
+              >
+                {activeEvent.type === "corporate"
+                  ? (language === "मराठी"
+                      ? "💬 ॲडमिनशी थेट चॅट करा (Chat with HR Admin)"
+                      : language === "हिन्दी"
+                        ? "💬 एडमिन से सीधे चैट करें (Chat with HR Admin)"
+                        : "💬 Chat with Admin (HR / Office Admin)")
+                  : (language === "मराठी"
+                      ? "💬 स्टुडिओशी थेट चॅट करा (Chat with Studio)"
+                      : language === "हिन्दी"
+                        ? "💬 स्टूडियो से सीधे चैट करें (Chat with Studio)"
+                        : "💬 Chat Directly with Studio")}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color="#00a884" />
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={activeEvent.type === "corporate" ? "#2563EB" : "#00a884"}
+              />
             </TouchableOpacity>
           </View>
         ) : (

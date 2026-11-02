@@ -101,24 +101,10 @@ export default function ChatScreen() {
   const [activeEvent, setActiveEvent] = useState<ActiveEventContext | null>(null);
 
   // Strict Event & Studio Scoping:
-  // When a guest scans an event QR code, they must ONLY see the chat for that event and studio.
-  // Other events of this studio or other studios are strictly isolated and never shown.
+  // Shows event admin / event studio chat, while keeping all marketplace studio conversations accessible!
   const displayedChats = useMemo(() => {
-    if (!activeEvent) return chats;
-    return chats.filter((c) => {
-      const sId = activeEvent.studioId?.toLowerCase();
-      const eId = activeEvent.eventId?.toLowerCase();
-      const sName = activeEvent.studioName?.toLowerCase();
-      const cTitle = c.title.toLowerCase();
-      const cId = c.conversationId.toLowerCase();
-
-      return (
-        (sId && cId.includes(sId)) ||
-        (eId && cId.includes(eId)) ||
-        (sName && cTitle.includes(sName))
-      );
-    });
-  }, [chats, activeEvent]);
+    return chats;
+  }, [chats]);
 
   const title =
     language === "मराठी"
@@ -256,125 +242,220 @@ export default function ChatScreen() {
                   navigation.navigate("Conversation", {
                     studioId: activeEvent.studioId || activeEvent.eventId,
                     studioName:
-                      activeEvent.studioName ||
-                      (activeEvent.type === "corporate" ? "Corporate Office" : "Photo Studio"),
-                    title: activeEvent.studioName || activeEvent.eventName,
+                      activeEvent.type === "corporate"
+                        ? (activeEvent.studioName ? `${activeEvent.studioName} (Admin)` : "Office Admin (HR)")
+                        : (activeEvent.studioName || "Photo Studio"),
+                    title:
+                      activeEvent.type === "corporate"
+                        ? "Chat with Admin"
+                        : (activeEvent.studioName || activeEvent.eventName),
+                    isCorporate: activeEvent.type === "corporate",
+                    eventName: activeEvent.eventName,
                   })
                 }
                 style={[
                   styles.activeEventCard,
                   {
-                    backgroundColor: "#00a88414",
-                    borderColor: "#00a88440",
+                    backgroundColor: activeEvent.type === "corporate" ? "#2563EB14" : "#00a88414",
+                    borderColor: activeEvent.type === "corporate" ? "#2563EB40" : "#00a88440",
                   },
                 ]}
               >
-                <View style={styles.activeEventIconBox}>
-                  <Ionicons name="chatbubbles" size={22} color="#00a884" />
+                <View
+                  style={[
+                    styles.activeEventIconBox,
+                    {
+                      backgroundColor: activeEvent.type === "corporate" ? "#2563EB20" : "#00a88420",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={activeEvent.type === "corporate" ? "people" : "chatbubbles"}
+                    size={22}
+                    color={activeEvent.type === "corporate" ? "#2563EB" : "#00a884"}
+                  />
                 </View>
 
                 <View style={styles.activeEventInfo}>
-                  <View style={styles.activeEventPill}>
+                  <View
+                    style={[
+                      styles.activeEventPill,
+                      {
+                        backgroundColor: activeEvent.type === "corporate" ? "#2563EB" : "#00a884",
+                      },
+                    ]}
+                  >
                     <View style={styles.activeEventDot} />
                     <Text style={styles.activeEventPillText}>
-                      {language === "मराठी" ? "स्कॅन केलेला इव्हेंट" : language === "हिन्दी" ? "स्कैन किया गया इवेंट" : "ACTIVE SCANNED EVENT"}
+                      {activeEvent.type === "corporate"
+                        ? (language === "मराठी" ? "🏢 कॉर्पोरेट ॲडमिन (HR)" : "🏢 CORPORATE ADMIN (HR)")
+                        : (language === "मराठी" ? "📸 स्कॅन केलेला इव्हेंट" : "📸 ACTIVE EVENT STUDIO")}
                     </Text>
                   </View>
 
                   <Text numberOfLines={1} style={[styles.activeEventTitle, { color: theme.text }]}>
-                    {activeEvent.studioName || activeEvent.eventName}
+                    {activeEvent.type === "corporate"
+                      ? (activeEvent.studioName || activeEvent.eventName || "Office Admin (HR)")
+                      : (activeEvent.studioName || activeEvent.eventName)}
                   </Text>
 
                   <Text numberOfLines={1} style={[styles.activeEventSub, { color: theme.textSecondary }]}>
-                    {language === "मराठी"
-                      ? "💬 फोटोग्राफरशी थेट चॅट करा (WhatsApp Chat)"
-                      : language === "हिन्दी"
-                        ? "💬 फोटोग्राफर से सीधे चैट करें (WhatsApp Chat)"
-                        : "💬 Chat directly with photographer (WhatsApp)"}
+                    {activeEvent.type === "corporate"
+                      ? (language === "मराठी"
+                          ? "💬 कार्यालयीन ॲडमिन / HR शी थेट चॅट करा"
+                          : "💬 Chat directly with HR / Office Event Admin")
+                      : (language === "मराठी"
+                          ? "💬 फोटोग्राफरशी थेट चॅट करा (WhatsApp Chat)"
+                          : "💬 Chat directly with photographer (WhatsApp)")}
                   </Text>
                 </View>
 
-                <Ionicons name="chevron-forward" size={18} color="#00a884" />
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={activeEvent.type === "corporate" ? "#2563EB" : "#00a884"}
+                />
               </TouchableOpacity>
             ) : null
           }
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              activeOpacity={0.78}
-              onPress={() => openConversation(item)}
-              style={[
-                styles.chatRow,
-                {
-                  backgroundColor: theme.surface,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
-              <View
+          renderItem={({ item }) => {
+            const isCorporateChat =
+              item.title.toLowerCase().includes("admin") ||
+              item.title.toLowerCase().includes("corporate") ||
+              item.title.toLowerCase().includes("hr") ||
+              (activeEvent?.type === "corporate" &&
+                (item.id.includes(activeEvent.eventId) || item.title.includes(activeEvent.eventName)));
+
+            return (
+              <TouchableOpacity
+                activeOpacity={0.78}
+                onPress={() => openConversation(item)}
                 style={[
-                  styles.avatar,
-                  { backgroundColor: `${theme.primary}18` },
+                  styles.chatRow,
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: theme.border,
+                  },
                 ]}
               >
-                <Text style={[styles.avatarText, { color: theme.primary }]}>
-                  {item.title.trim().charAt(0).toUpperCase()}
-                </Text>
-              </View>
-
-              <View style={styles.chatContent}>
-                <View style={styles.chatTop}>
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: isCorporateChat ? "#2563EB18" : `${theme.primary}18`,
+                    },
+                  ]}
+                >
                   <Text
-                    numberOfLines={1}
-                    style={[styles.chatName, { color: theme.text }]}
-                  >
-                    {item.title}
-                  </Text>
-
-                  {item.updatedAt ? (
-                    <Text
-                      style={[styles.time, { color: theme.textMuted }]}
-                    >
-                      {new Date(item.updatedAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <View style={styles.previewRow}>
-                  <Text
-                    numberOfLines={1}
                     style={[
-                      styles.preview,
-                      { color: theme.textSecondary },
+                      styles.avatarText,
+                      { color: isCorporateChat ? "#2563EB" : theme.primary },
                     ]}
                   >
-                    {item.lastMessage}
+                    {isCorporateChat ? "🏢" : item.title.trim().charAt(0).toUpperCase()}
                   </Text>
+                </View>
 
-                  {item.unreadCount && item.unreadCount > 0 ? (
-                    <View
+                <View style={styles.chatContent}>
+                  <View style={styles.chatTop}>
+                    <View style={styles.chatNameBadgeRow}>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.chatName, { color: theme.text }]}
+                      >
+                        {item.title}
+                      </Text>
+                      <View
+                        style={[
+                          styles.chatTypeBadge,
+                          {
+                            backgroundColor: isCorporateChat ? "#2563EB15" : `${theme.primary}12`,
+                            borderColor: isCorporateChat ? "#2563EB40" : `${theme.primary}35`,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chatTypeBadgeText,
+                            { color: isCorporateChat ? "#2563EB" : theme.primary },
+                          ]}
+                        >
+                          {isCorporateChat ? "HR Admin" : "Studio"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {item.updatedAt ? (
+                      <Text
+                        style={[styles.time, { color: theme.textMuted }]}
+                      >
+                        {new Date(item.updatedAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.previewRow}>
+                    <Text
+                      numberOfLines={1}
                       style={[
-                        styles.unread,
-                        { backgroundColor: theme.primary },
+                        styles.preview,
+                        { color: theme.textSecondary },
                       ]}
                     >
-                      <Text style={styles.unreadText}>
-                        {item.unreadCount}
-                      </Text>
-                    </View>
-                  ) : (
-                    <Ionicons
-                      name="chevron-forward"
-                      size={15}
-                      color={theme.textMuted}
-                    />
-                  )}
+                      {item.lastMessage}
+                    </Text>
+
+                    {item.unreadCount && item.unreadCount > 0 ? (
+                      <View
+                        style={[
+                          styles.unread,
+                          { backgroundColor: theme.primary },
+                        ]}
+                      >
+                        <Text style={styles.unreadText}>
+                          {item.unreadCount}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Ionicons
+                        name="chevron-forward"
+                        size={15}
+                        color={theme.textMuted}
+                      />
+                    )}
+                  </View>
                 </View>
+              </TouchableOpacity>
+            );
+          }}
+          ListFooterComponent={
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.marketplaceFooterCard,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}
+              onPress={() => navigation.navigate("Main", { screen: "Marketplace" })}
+            >
+              <View style={[styles.marketplaceFooterIconBox, { backgroundColor: `${theme.primary}15` }]}>
+                <Ionicons name="compass" size={20} color={theme.primary} />
               </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.marketplaceFooterTitle, { color: theme.text }]}>
+                  {language === "मराठी" ? "मार्केटप्लेस मधील स्टुडिओ एक्सप्लोर करा" : "Explore Marketplace Studios"}
+                </Text>
+                <Text style={[styles.marketplaceFooterSub, { color: theme.textSecondary }]}>
+                  {language === "मराठी"
+                    ? "सर्वोत्तम फोटोग्राफी स्टुडिओशी थेट बोला किंवा बुक करा"
+                    : "Find studios, check pricing & chat directly"}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={theme.primary} />
             </TouchableOpacity>
-          )}
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <View
@@ -697,6 +778,54 @@ const styles = StyleSheet.create({
 
   activeEventSub: {
     fontSize: 12,
+    marginTop: 2,
+  },
+
+  chatNameBadgeRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  chatTypeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+
+  chatTypeBadgeText: {
+    fontSize: 9.5,
+    fontWeight: "700",
+  },
+
+  marketplaceFooterCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 14,
+    marginBottom: 20,
+    gap: 12,
+  },
+
+  marketplaceFooterIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  marketplaceFooterTitle: {
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+
+  marketplaceFooterSub: {
+    fontSize: 11.5,
     marginTop: 2,
   },
 });

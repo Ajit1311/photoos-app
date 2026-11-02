@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -141,10 +141,21 @@ export default function ConversationScreen() {
   const isDark = colorScheme === "dark";
 
   const studioId = route.params?.studioId;
-  const studioName =
+  const rawStudioName =
     route.params?.studioName ??
     route.params?.title ??
     "Photography Studio";
+
+  const isCorporate =
+    route.params?.isCorporate === true ||
+    rawStudioName.toLowerCase().includes("admin") ||
+    rawStudioName.toLowerCase().includes("corporate") ||
+    rawStudioName.toLowerCase().includes("hr") ||
+    (studioId && (String(studioId).startsWith("ev_corp_") || String(studioId).startsWith("corp_")));
+
+  const studioName = isCorporate && !rawStudioName.toLowerCase().includes("admin")
+    ? `${rawStudioName} (HR Admin)`
+    : rawStudioName;
 
   const [conversationId, setConversationId] =
     useState<string | undefined>(
@@ -157,6 +168,7 @@ export default function ConversationScreen() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const isSendingRef = useRef(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
@@ -336,9 +348,10 @@ export default function ConversationScreen() {
 
   const sendMessageWithContent = async (contentToSend: string) => {
     const trimmed = contentToSend.trim();
-    if (!trimmed || sending) {
+    if (!trimmed || sending || isSendingRef.current) {
       return;
     }
+    isSendingRef.current = true;
 
     let id = conversationId;
     const tempId = `local-${Date.now()}`;
@@ -396,6 +409,7 @@ export default function ConversationScreen() {
     } catch (err) {
       console.error("[ClientChat] Send failed:", err);
     } finally {
+      isSendingRef.current = false;
       setSending(false);
     }
   };
@@ -737,13 +751,17 @@ export default function ConversationScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerIdentity}>
-          <View style={styles.headerAvatar}>
-            <Text style={styles.headerAvatarText}>
-              {studioName
-                .trim()
-                .charAt(0)
-                .toUpperCase()}
-            </Text>
+          <View style={[styles.headerAvatar, isCorporate && { backgroundColor: "#2563EB" }]}>
+            {isCorporate ? (
+              <Ionicons name="people" size={20} color="#FFFFFF" />
+            ) : (
+              <Text style={styles.headerAvatarText}>
+                {studioName
+                  .trim()
+                  .charAt(0)
+                  .toUpperCase()}
+              </Text>
+            )}
           </View>
 
           <View style={styles.headerText}>
@@ -755,9 +773,23 @@ export default function ConversationScreen() {
             </Text>
 
             <View style={styles.onlineStatusRow}>
-              <View style={[styles.onlineDot, !isStudioOnline && { backgroundColor: isDark ? "#8696a0" : "#8c9ca5" }]} />
-              <Text style={[styles.onlineStatusText, !isStudioOnline && { color: isDark ? "#8696a0" : "#667781" }]}>
-                {isStudioOnline ? "online" : "offline"} • एंड-टू-एंड एनक्रिप्टेड
+              <View
+                style={[
+                  styles.onlineDot,
+                  isCorporate && { backgroundColor: "#2563EB" },
+                  !isCorporate && !isStudioOnline && { backgroundColor: isDark ? "#8696a0" : "#8c9ca5" },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.onlineStatusText,
+                  isCorporate && { color: isDark ? "#93C5FD" : "#2563EB" },
+                  !isCorporate && !isStudioOnline && { color: isDark ? "#8696a0" : "#667781" },
+                ]}
+              >
+                {isCorporate
+                  ? "🏢 HR & Event Admin • सुरक्षित चॅट"
+                  : `${isStudioOnline ? "online" : "offline"} • एंड-टू-एंड एनक्रिप्टेड`}
               </Text>
             </View>
           </View>
@@ -767,10 +799,17 @@ export default function ConversationScreen() {
           <TouchableOpacity
             style={styles.headerAction}
             activeOpacity={0.8}
-            onPress={() => Alert.alert("Call", `${studioName} शी थेट संपर्क साधण्यासाठी कॉल पर्याय उपलब्ध आहे.`)}
+            onPress={() =>
+              Alert.alert(
+                isCorporate ? "HR / Office Admin" : "Studio Contact",
+                isCorporate
+                  ? "या इव्हेंटच्या फोटोंसाठी कार्यालयीन ॲडमिन किंवा HR शी थेट संपर्क साधा."
+                  : `${studioName} शी थेट संपर्क साधण्यासाठी कॉल पर्याय उपलब्ध आहे.`
+              )
+            }
           >
             <Ionicons
-              name="call"
+              name={isCorporate ? "information-circle-outline" : "call"}
               size={20}
               color={isDark ? "#aebac1" : "#54656f"}
             />

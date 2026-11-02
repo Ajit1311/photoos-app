@@ -56,6 +56,8 @@ export type RootStackParamList = {
     title?: string;
     studioId?: string;
     studioName?: string;
+    isCorporate?: boolean;
+    eventName?: string;
   };
 
   Language: undefined;

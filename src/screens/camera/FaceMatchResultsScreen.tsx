@@ -291,11 +291,15 @@ export default function FaceMatchResultsScreen() {
     if (!commentPhoto || !commentText.trim()) return;
     setSubmittingComment(true);
 
+    const isCorp = activeEvent?.type === "corporate";
     const currentEventId = route.params?.eventId || activeEvent?.eventId;
-    const currentStudioId = eventInfo?.studioId || activeEvent?.studioId;
-    const currentStudioName = eventInfo?.studioName || activeEvent?.studioName || "Photo Studio";
+    const currentStudioId = isCorp ? (activeEvent?.eventId || "corporate_admin") : (eventInfo?.studioId || activeEvent?.studioId);
+    const currentStudioName = isCorp
+      ? (activeEvent?.studioName ? `${activeEvent.studioName} (Admin)` : "Office Admin (HR)")
+      : (eventInfo?.studioName || activeEvent?.studioName || "Photo Studio");
     const noteContent = commentText.trim();
     const photoTitle = commentPhoto.name || `Photo ${commentPhoto.id.slice(0, 8)}`;
+    const notePrefix = isCorp ? "Corporate Photo Note" : "Photo Note";
 
     try {
       // 1. Post to backend gallery photo comment API
@@ -310,11 +314,12 @@ export default function FaceMatchResultsScreen() {
             photoUrl: commentPhoto.thumbnailUrl || commentPhoto.url,
             comment: noteContent,
             studioId: currentStudioId,
+            isCorporate: isCorp,
           }),
         }).catch((e) => console.warn("[FaceMatch] Photo note api notice:", e));
       }
 
-      // 2. Dispatch to 1-on-1 Chat so it appears in the app chat section & studio dashboard
+      // 2. Dispatch to 1-on-1 Chat so it appears in the app chat section & studio/admin dashboard
       try {
         const startRes = await fetch("https://app.photoos.in/api/client-marketplace-chat", {
           method: "POST",
@@ -323,6 +328,7 @@ export default function FaceMatchResultsScreen() {
             action: "start",
             studio_id: currentStudioId,
             studio_name: currentStudioName,
+            is_corporate: isCorp,
           }),
         });
         const startData = await startRes.json();
@@ -335,7 +341,7 @@ export default function FaceMatchResultsScreen() {
             body: JSON.stringify({
               action: "send",
               conversation_id: conversationId,
-              content: `📸 [Photo Note on ${photoTitle}]: "${noteContent}"`,
+              content: `📸 [${notePrefix} on ${photoTitle}]: "${noteContent}"`,
             }),
           });
         }
@@ -344,9 +350,13 @@ export default function FaceMatchResultsScreen() {
       }
 
       setCommentSuccessToast(
-        language === "मराठी"
-          ? `✅ तुमची नोट '${currentStudioName}' स्टुडिओच्या चॅटमध्ये पाठवली आहे!`
-          : `✅ Note sent directly to ${currentStudioName}'s chat!`
+        isCorp
+          ? (language === "मराठी"
+              ? `✅ तुमची नोट कार्यालयीन ॲडमिन (HR) चॅटमध्ये पाठवली आहे!`
+              : `✅ Note sent directly to Office Admin (HR) chat!`)
+          : (language === "मराठी"
+              ? `✅ तुमची नोट '${currentStudioName}' स्टुडिओच्या चॅटमध्ये पाठवली आहे!`
+              : `✅ Note sent directly to ${currentStudioName}'s chat!`)
       );
       setTimeout(() => setCommentSuccessToast(null), 3500);
 
@@ -555,40 +565,7 @@ export default function FaceMatchResultsScreen() {
 
       const photos = galleryResult.photos;
 
-      // Check current selfieUri
-      let currentSelfie = selfieUri;
-      if (!currentSelfie && Platform.OS === "web" && typeof window !== "undefined") {
-        currentSelfie = sessionStorage.getItem("@photoos_last_selfie_v2") || undefined;
-      }
-
-      // Safari Crash Loop Breaker: If previous execution crashed/reloaded mid-match, clear selfie to stop reload loop
-      if (Platform.OS === "web" && typeof window !== "undefined") {
-        const wasInProgress = sessionStorage.getItem("@photoos_matching_in_progress");
-        if (wasInProgress === "true") {
-          console.warn("[FaceMatch] Breaking reload loop in Safari");
-          sessionStorage.removeItem("@photoos_matching_in_progress");
-          sessionStorage.removeItem("@photoos_last_selfie_v2");
-          currentSelfie = undefined;
-          setViewTab("all");
-          setMatchingState("done");
-          return;
-        }
-      }
-
-      if (!currentSelfie) {
-        // Direct event access or browse: show all photos immediately
-        setViewTab("all");
-        setMatchingState("done");
-        return;
-      }
-
-      if (photos.length === 0) {
-        setViewTab("all");
-        setMatchingState("done");
-        return;
-      }
-
-      // Check if we already have matched photos cached in storage
+      // 1. Check if we already have matched photos cached in storage for this event
       if (Platform.OS === "web" && typeof window !== "undefined") {
         try {
           const cached =
@@ -598,12 +575,31 @@ export default function FaceMatchResultsScreen() {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
               setMatchedPhotos(parsed);
-              setViewTab("matched");
-              setMatchingState("done");
-              return;
+              // If user simply opened/refreshed the page without taking a new selfie, show matched album immediately!
+              if (!selfieUri) {
+                setViewTab("matched");
+                setMatchingState("done");
+                return;
+              }
             }
           }
         } catch {}
+      }
+
+      // 2. Only run matching if a selfie was explicitly provided in route params
+      const currentSelfie = selfieUri;
+
+      // If no fresh selfie was captured, show all event photos directly
+      if (!currentSelfie) {
+        setViewTab("all");
+        setMatchingState("done");
+        return;
+      }
+
+      if (photos.length === 0) {
+        setViewTab("all");
+        setMatchingState("done");
+        return;
       }
 
       // Step 2: Initialize lightweight AI models
@@ -681,7 +677,12 @@ export default function FaceMatchResultsScreen() {
               : `Matching your face against event photos... (${progressCount}/${photos.length})`
         );
 
-        const photoUrl = photo.thumbnailUrl || photo.url;
+        // Prioritize lightweight thumbnail (downscaled to 480px) to prevent iOS Safari memory exhaustion
+        const rawPhotoUrl = photo.thumbnailUrl || photo.url;
+        const photoUrl = rawPhotoUrl
+          ? rawPhotoUrl.replace("w=1200", "w=480").replace("w=1080", "w=480").replace("w=640", "w=480")
+          : "";
+
         if (photoUrl) {
           try {
             const photoFaces = await extractPhotoFacesDescriptors(photoUrl);
@@ -708,8 +709,8 @@ export default function FaceMatchResultsScreen() {
           }
         }
 
-        // Cooperative 60ms yield to allow browser GC to free memory and keep UI silky smooth
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        // Cooperative 80ms yield to allow browser GC to free memory and keep UI silky smooth
+        await new Promise((resolve) => setTimeout(resolve, 80));
       }
 
       // Sort matched photos by highest confidence
@@ -1304,18 +1305,35 @@ export default function FaceMatchResultsScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {/* 2. COMMENT / NOTE TO STUDIO */}
+              {/* 2. COMMENT / NOTE TO STUDIO / HR ADMIN */}
               <TouchableOpacity
-                style={[styles.modalActionBtnSecondary, { borderColor: colors.primary, backgroundColor: `${colors.primary}18` }]}
+                style={[
+                  styles.modalActionBtnSecondary,
+                  {
+                    borderColor: activeEvent?.type === "corporate" ? "#2563EB" : colors.primary,
+                    backgroundColor: activeEvent?.type === "corporate" ? "#2563EB18" : `${colors.primary}18`,
+                  },
+                ]}
                 onPress={() => {
                   const target = selectedPhoto;
                   setSelectedPhoto(null);
                   openCommentModal(target);
                 }}
               >
-                <Ionicons name="chatbubble-ellipses" size={20} color={colors.primary} />
-                <Text style={[styles.modalBtnTextSec, { color: colors.primary }]}>
-                  {language === "मराठी" ? "स्टुडिओ नोट" : "Note"}
+                <Ionicons
+                  name={activeEvent?.type === "corporate" ? "people" : "chatbubble-ellipses"}
+                  size={20}
+                  color={activeEvent?.type === "corporate" ? "#2563EB" : colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.modalBtnTextSec,
+                    { color: activeEvent?.type === "corporate" ? "#2563EB" : colors.primary },
+                  ]}
+                >
+                  {activeEvent?.type === "corporate"
+                    ? (language === "मराठी" ? "ॲडमिन नोट" : "Note to Admin")
+                    : (language === "मराठी" ? "स्टुडिओ नोट" : "Note")}
                 </Text>
               </TouchableOpacity>
 
@@ -1344,7 +1362,7 @@ export default function FaceMatchResultsScreen() {
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* MODAL: CLIENT PHOTO COMMENT / NOTE SINK TO STUDIO CHAT */}
+      {/* MODAL: CLIENT PHOTO COMMENT / NOTE SINK TO STUDIO OR HR ADMIN CHAT */}
       {/* ------------------------------------------------------------- */}
       {commentModalVisible && commentPhoto && (
         <Modal
@@ -1358,9 +1376,15 @@ export default function FaceMatchResultsScreen() {
               {/* HEADER */}
               <View style={styles.commentModalHeader}>
                 <View style={styles.commentModalHeaderLeft}>
-                  <Ionicons name="chatbubble-ellipses" size={20} color={colors.primary} />
+                  <Ionicons
+                    name={activeEvent?.type === "corporate" ? "people" : "chatbubble-ellipses"}
+                    size={20}
+                    color={activeEvent?.type === "corporate" ? "#2563EB" : colors.primary}
+                  />
                   <Text style={[styles.commentModalTitle, { color: theme.text }]}>
-                    {language === "मराठी" ? "स्टुडिओला सूचना / नोट पाठवा" : "Send Note to Studio"}
+                    {activeEvent?.type === "corporate"
+                      ? (language === "मराठी" ? "कार्यालयीन ॲडमिन / HR ला सूचना पाठवा" : "Send Note to HR Admin")
+                      : (language === "मराठी" ? "स्टुडिओला सूचना / नोट पाठवा" : "Send Note to Studio")}
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => setCommentModalVisible(false)}>
@@ -1380,24 +1404,34 @@ export default function FaceMatchResultsScreen() {
                     {commentPhoto.name || "Event Photo"}
                   </Text>
                   <Text style={[styles.commentSnippetStudio, { color: theme.textSecondary }]}>
-                    📍 {eventInfo?.studioName || activeEvent?.studioName || "Photo Studio"}
+                    {activeEvent?.type === "corporate"
+                      ? (activeEvent.studioName ? `🏢 ${activeEvent.studioName} (Admin)` : "🏢 Corporate Office (HR)")
+                      : (`📍 ${eventInfo?.studioName || activeEvent?.studioName || "Photo Studio"}`)}
                   </Text>
                 </View>
               </View>
 
               {/* NOTE INPUT */}
               <Text style={[styles.commentInputLabel, { color: theme.textSecondary }]}>
-                {language === "मराठी"
-                  ? "या फोटोबद्दल तुमची नोट लिहा (उदा. रिटच करा, मुख्य आल्बममध्ये टाका):"
-                  : "Write your note for this photo (e.g. Please retouch, select for album):"}
+                {activeEvent?.type === "corporate"
+                  ? (language === "मराठी"
+                      ? "या फोटोबद्दल ॲडमिन / HR ला सूचना लिहा (उदा. मुख्य प्रेझेंटेशनमध्ये हवा आहे):"
+                      : "Write your note for Admin / HR (e.g. Include in annual presentation):")
+                  : (language === "मराठी"
+                      ? "या फोटोबद्दल तुमची नोट लिहा (उदा. रिटच करा, मुख्य आल्बममध्ये टाका):"
+                      : "Write your note for this photo (e.g. Please retouch, select for album):")}
               </Text>
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
                 placeholder={
-                  language === "मराठी"
-                    ? "येथे तुमची नोट टाईप करा..."
-                    : "Type your instructions or feedback here..."
+                  activeEvent?.type === "corporate"
+                    ? (language === "मराठी"
+                        ? "येथे ॲडमिनसाठी तुमची सूचना लिहा..."
+                        : "Type your instructions for HR Admin here...")
+                    : (language === "मराठी"
+                        ? "येथे तुमची नोट टाईप करा..."
+                        : "Type your instructions or feedback here...")
                 }
                 placeholderTextColor={theme.textMuted}
                 multiline
@@ -1416,7 +1450,7 @@ export default function FaceMatchResultsScreen() {
               <TouchableOpacity
                 style={[
                   styles.commentSubmitBtn,
-                  { backgroundColor: colors.primary },
+                  { backgroundColor: activeEvent?.type === "corporate" ? "#2563EB" : colors.primary },
                   (!commentText.trim() || submittingComment) && { opacity: 0.6 },
                 ]}
                 disabled={!commentText.trim() || submittingComment}
@@ -1428,7 +1462,9 @@ export default function FaceMatchResultsScreen() {
                   <>
                     <Ionicons name="send" size={16} color="#FFFFFF" />
                     <Text style={styles.commentSubmitText}>
-                      {language === "मराठी" ? "स्टुडिओ चॅटमध्ये पाठवा" : "Send to Studio Chat"}
+                      {activeEvent?.type === "corporate"
+                        ? (language === "मराठी" ? "ॲडमिन चॅटमध्ये पाठवा" : "Send to Admin Chat")
+                        : (language === "मराठी" ? "स्टुडिओ चॅटमध्ये पाठवा" : "Send to Studio Chat")}
                     </Text>
                   </>
                 )}
