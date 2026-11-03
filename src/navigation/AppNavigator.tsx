@@ -21,6 +21,7 @@ import ConversationScreen from "../screens/chat/ConversationScreen";
 import LanguageScreen from "../screens/profile/LanguageScreen";
 import AppearanceScreen from "../screens/profile/AppearanceScreen";
 import SettingsScreen from "../screens/profile/SettingsScreen";
+import DeleteAccountScreen from "../screens/profile/DeleteAccountScreen";
 import NotificationsScreen from "../screens/notifications/NotificationsScreen";
 import ClientBookingsScreen from "../screens/client/ClientBookingsScreen";
 import ClientBookingReviewScreen from "../screens/client/ClientBookingReviewScreen";
@@ -97,6 +98,11 @@ function AuthenticatedNavigator() {
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
+      />
+
+      <Stack.Screen
+        name="DeleteAccount"
+        component={DeleteAccountScreen}
       />
 
       <Stack.Screen

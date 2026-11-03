@@ -72,4 +72,5 @@ export type RootStackParamList = {
   Albums: undefined;
   Payments: undefined;
   FavoriteStudios: undefined;
+  DeleteAccount: undefined;
 };
