@@ -153,26 +153,24 @@ export async function sendSupabasePasswordReset(
   }
 }
 
+export function getDirectGoogleOAuthUrl(redirectUri?: string): string {
+  const clientId = "474404577878-i3h8uhua4pujj4if9cdn02m1qj5o4p8d.apps.googleusercontent.com";
+  const callback =
+    redirectUri ||
+    (typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin + window.location.pathname
+      : "https://ajit1311.github.io/photoos-app/");
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    callback
+  )}&response_type=token&scope=openid%20email%20profile&prompt=select_account`;
+}
+
 export async function signInWithGoogleOAuth(): Promise<void> {
+  // Direct client app Google authentication without routing through studio management domain
   if (typeof window !== "undefined" && window.location) {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: window.location.origin + window.location.pathname,
-      },
-    });
-    if (error) throw error;
-    if (data?.url) {
-      window.location.href = data.url;
-    }
-  } else {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: "photoos://auth/callback",
-      },
-    });
-    if (error) throw error;
+    const directUrl = getDirectGoogleOAuthUrl();
+    window.location.href = directUrl;
   }
 }
 

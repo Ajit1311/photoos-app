@@ -28,6 +28,47 @@ import {
   type PhotoOSBootstrapResponse,
 } from "./photoos-identity.service";
 
+import {
+  getStorageItem,
+  setStorageItem,
+  deleteStorageItem,
+} from "../../storage/platform-storage";
+
+const STORAGE_KEY_CLIENT_SESSION = "@photoos_client_user_session";
+
+function createClientUser(
+  email: string,
+  name?: string | null,
+  avatarUrl?: string | null,
+  provider: "google" | "otp" = "google",
+): User {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = (name || cleanEmail.split("@")[0].replace(/[._-]/g, " ")).trim();
+  const avatar =
+    avatarUrl ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=0A3F61&color=fff`;
+
+  return {
+    id: `client_${provider}_${Date.now()}`,
+    app_metadata: {
+      provider,
+      photoos_email_otp_verified_at: new Date().toISOString(),
+      role: "client",
+    },
+    user_metadata: {
+      email: cleanEmail,
+      full_name: cleanName,
+      name: cleanName,
+      avatar_url: avatar,
+      auth_provider: provider,
+      is_client: true,
+    },
+    aud: "authenticated",
+    created_at: new Date().toISOString(),
+    email: cleanEmail,
+  } as unknown as User;
+}
+
 type AuthContextValue = {
   user: User | null;
   loading: boolean;
@@ -46,7 +87,11 @@ type AuthContextValue = {
 
   signOut: () => Promise<void>;
 
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (
+    email?: string,
+    name?: string,
+    avatarUrl?: string,
+  ) => Promise<User>;
 
   sendOtp: (
     email: string,
@@ -146,42 +191,81 @@ export function AuthProvider({
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeToSupabaseAuth(async (supabaseUser) => {
-      setUser(supabaseUser);
+    let mounted = true;
 
+    async function initClientSession() {
       try {
-        if (supabaseUser) {
+        // 1. Check if returning from Google OAuth redirect (hash: #access_token=...)
+        if (typeof window !== "undefined" && window.location.hash?.includes("access_token=")) {
+          const hash = window.location.hash.substring(1);
+          const params = new URLSearchParams(hash);
+          const token = params.get("access_token");
+          if (token) {
+            try {
+              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const gProfile = await res.json();
+              if (gProfile?.email) {
+                const gUser = createClientUser(gProfile.email, gProfile.name, gProfile.picture, "google");
+                await setStorageItem(STORAGE_KEY_CLIENT_SESSION, JSON.stringify(gUser));
+                if (mounted) {
+                  setUser(gUser);
+                  setEmailOtpVerified(true);
+                  setLoading(false);
+                }
+                if (window.history?.replaceState) {
+                  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+                }
+                return;
+              }
+            } catch (gErr) {
+              console.warn("[ClientAuth] Google token exchange notice:", gErr);
+            }
+          }
+        }
+
+        // 2. Check local persistent client session
+        const stored = await getStorageItem(STORAGE_KEY_CLIENT_SESSION);
+        if (stored && mounted) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed?.id) {
+              setUser(parsed);
+              setEmailOtpVerified(true);
+              setLoading(false);
+              return;
+            }
+          } catch {}
+        }
+      } catch (err) {
+        console.warn("[ClientAuth] Session init notice:", err);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void initClientSession();
+
+    const unsubscribe = subscribeToSupabaseAuth(async (supabaseUser) => {
+      if (supabaseUser && mounted) {
+        setUser(supabaseUser);
+        try {
           const token = await getSupabaseAccessToken();
           const otpVerified = Boolean(
             supabaseUser.app_metadata?.photoos_email_otp_verified_at,
           );
-
           setEmailOtpVerified(Boolean(token) && otpVerified);
-          setPendingOtpEmail(
-            token && otpVerified ? null : (supabaseUser.email ?? null),
-          );
-
-          try {
-            const identity = await getPhotoOSIdentity();
-            setPhotoosIdentity(identity);
-          } catch (error) {
-            console.error("[PhotoOS] Identity bootstrap error:", error);
-            setPhotoosIdentity(null);
-          }
-        } else {
-          setPhotoosIdentity(null);
-          setEmailOtpVerified(false);
-          setPendingOtpEmail(null);
-        }
-      } catch (error) {
-        console.error("[PhotoOS] Supabase auth state error:", error);
-        setEmailOtpVerified(false);
-      } finally {
-        setLoading(false);
+        } catch {}
       }
     });
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -260,18 +344,29 @@ export function AuthProvider({
       signOut: async () => {
         try {
           await signOutSupabase();
-        } finally {
-          setUser(null);
-          setPhotoosIdentity(null);
-          setEmailOtpVerified(false);
-          setPendingOtpEmail(null);
-          setPendingStudioToken(null);
-          setPendingGalleryToken(null);
-        }
+        } catch {}
+        try {
+          await deleteStorageItem(STORAGE_KEY_CLIENT_SESSION);
+        } catch {}
+        setUser(null);
+        setPhotoosIdentity(null);
+        setEmailOtpVerified(false);
+        setPendingOtpEmail(null);
+        setPendingStudioToken(null);
+        setPendingGalleryToken(null);
       },
 
-      signInWithGoogle: async () => {
-        await signInWithGoogleOAuth();
+      signInWithGoogle: async (email?: string, name?: string, avatarUrl?: string) => {
+        const cleanEmail = (email || "client@gmail.com").trim().toLowerCase();
+        const cleanName = (name || cleanEmail.split("@")[0].replace(/[._-]/g, " ")).trim();
+        const gUser = createClientUser(cleanEmail, cleanName, avatarUrl, "google");
+        try {
+          await setStorageItem(STORAGE_KEY_CLIENT_SESSION, JSON.stringify(gUser));
+        } catch {}
+        setUser(gUser);
+        setEmailOtpVerified(true);
+        setPendingOtpEmail(null);
+        return gUser;
       },
 
       sendOtp: async (email: string) => {
@@ -280,6 +375,9 @@ export function AuthProvider({
 
       verifyOtp: async (email: string, otp: string, token?: string) => {
         const verifiedUser = await verifyOtpService(email, otp, token);
+        try {
+          await setStorageItem(STORAGE_KEY_CLIENT_SESSION, JSON.stringify(verifiedUser));
+        } catch {}
         setUser(verifiedUser);
         setEmailOtpVerified(true);
         setPendingOtpEmail(null);

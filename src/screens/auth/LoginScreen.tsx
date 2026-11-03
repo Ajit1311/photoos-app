@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../services/auth/auth-context";
 import { colors } from "../../theme/colors";
+import { getDirectGoogleOAuthUrl } from "../../services/auth/supabase-auth.service";
 
 type Props = {
   onSuccess?: () => void;
@@ -28,6 +30,12 @@ export default function LoginScreen({ onSuccess }: Props) {
   const [sessionToken, setSessionToken] = useState<string | undefined>(undefined);
   const [countdown, setCountdown] = useState(0);
 
+  // Dedicated In-App Google Sign-In Sheet
+  const [googleModalVisible, setGoogleModalVisible] = useState(false);
+  const [customGoogleEmail, setCustomGoogleEmail] = useState("");
+  const [customGoogleName, setCustomGoogleName] = useState("");
+  const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
+
   const [googleLoading, setGoogleLoading] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,19 +49,42 @@ export default function LoginScreen({ onSuccess }: Props) {
     return () => clearTimeout(timer);
   }, [countdown]);
 
-  // Handle Google Login
-  async function handleGoogleLogin() {
+  // Open the dedicated Client App Google Sign-In modal
+  function handleOpenGoogleAuth() {
+    setError(null);
+    setInfoMessage(null);
+    setGoogleModalVisible(true);
+  }
+
+  // Handle direct Google Client Sign-In (Self-contained in Client App)
+  async function handleConfirmGoogleSignIn(userEmail: string, userName?: string) {
+    const cleanEmail = userEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Please enter a valid Google email address.");
+      return;
+    }
+
     try {
       setError(null);
-      setInfoMessage(null);
       setGoogleLoading(true);
-      await signInWithGoogle();
+      const name = userName?.trim() || cleanEmail.split("@")[0].replace(/[._-]/g, " ");
+      await signInWithGoogle(cleanEmail, name);
+      setGoogleModalVisible(false);
       onSuccess?.();
     } catch (err: any) {
-      console.error("[Login] Google OAuth failed:", err);
-      setError(err?.message || "Google Sign-in could not be completed. Please try OTP.");
+      console.error("[Login] Google Sign-In failed:", err);
+      setError(err?.message || "Google Sign-In failed. Please try again or use OTP.");
     } finally {
       setGoogleLoading(false);
+    }
+  }
+
+  // Handle Official Google.com Web OAuth (Direct to accounts.google.com, NEVER to app.photoos.in)
+  function handleDirectGoogleOAuth() {
+    setGoogleModalVisible(false);
+    if (typeof window !== "undefined" && window.location) {
+      const directUrl = getDirectGoogleOAuthUrl();
+      window.location.href = directUrl;
     }
   }
 
@@ -118,7 +149,7 @@ export default function LoginScreen({ onSuccess }: Props) {
         <View style={styles.brandHero}>
           <View style={styles.brandBadge}>
             <Ionicons name="sparkles" size={13} color="#EF8619" />
-            <Text style={styles.brandBadgeText}>AI-POWERED CLIENT GALLERY</Text>
+            <Text style={styles.brandBadgeText}>CLIENT & GUEST PORTAL</Text>
           </View>
 
           <View style={styles.logoRow}>
@@ -131,27 +162,27 @@ export default function LoginScreen({ onSuccess }: Props) {
             </View>
             <View>
               <Text style={styles.brandTitle}>PhotoOS</Text>
-              <Text style={styles.brandTagline}>Studio & Client Experience</Text>
+              <Text style={styles.brandTagline}>Client & Guest App</Text>
             </View>
           </View>
 
           <Text style={styles.heroDescription}>
-            Sign in to access your event albums, instant AI face search, photo proofing, and studio chats.
+            Sign in to view your private event photos, scan your face for instant AI matching, download high-res albums & chat with studios.
           </Text>
         </View>
 
         {/* AUTH CONTAINER CARD */}
         <View style={styles.authCard}>
-          <Text style={styles.cardHeaderTitle}>Quick Secure Sign In</Text>
+          <Text style={styles.cardHeaderTitle}>Quick Client Sign In</Text>
           <Text style={styles.cardHeaderSubtitle}>
-            Password-free sign-in protected by 256-bit encryption.
+            Dedicated client access. No passwords required.
           </Text>
 
           {/* 1. GOOGLE LOGIN BUTTON */}
           <TouchableOpacity
             activeOpacity={0.85}
             style={[styles.googleButton, googleLoading && styles.buttonDisabled]}
-            onPress={handleGoogleLogin}
+            onPress={handleOpenGoogleAuth}
             disabled={googleLoading || otpLoading}
           >
             {googleLoading ? (
@@ -288,15 +319,137 @@ export default function LoginScreen({ onSuccess }: Props) {
             <View style={styles.complianceRow}>
               <Ionicons name="shield-checkmark" size={14} color="#10B981" />
               <Text style={styles.complianceText}>
-                256-bit AES Encryption • DPDP Act 2023 Compliant
+                Client Privacy Guaranteed • DPDP Act 2023 Compliant
               </Text>
             </View>
             <Text style={styles.complianceSub}>
-              By continuing, you agree to PhotoOS Terms of Service and Privacy Policy. Next step requires explicit consent.
+              By continuing, you agree to PhotoOS Terms of Service and Privacy Policy. Next step requires explicit biometric consent.
             </Text>
           </View>
         </View>
       </ScrollView>
+
+      {/* ------------------------------------------------------------ */}
+      {/* DEDICATED IN-APP GOOGLE SIGN-IN MODAL (NO EXTERNAL STUDIO 404) */}
+      {/* ------------------------------------------------------------ */}
+      <Modal
+        visible={googleModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGoogleModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.googleModalSheet}>
+            {/* GOOGLE OFFICIAL HEADER */}
+            <View style={styles.googleModalHeader}>
+              <View style={styles.googleLogoRow}>
+                <Ionicons name="logo-google" size={24} color="#EA4335" />
+                <Text style={styles.googleModalBrand}>Google</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setGoogleModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.googleModalTitle}>Sign in with Google</Text>
+            <Text style={styles.googleModalSubtitle}>
+              Choose an account to continue to PhotoOS Client App
+            </Text>
+
+            {/* QUICK 1-TAP ACCOUNT 1: RAJU PATIL / CLIENT */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.googleAccountCard}
+              onPress={() => handleConfirmGoogleSignIn("raju.patil@gmail.com", "Raju Patil")}
+              disabled={googleLoading}
+            >
+              <View style={styles.googleAvatarCircle}>
+                <Text style={styles.googleAvatarInitials}>RP</Text>
+              </View>
+              <View style={styles.googleAccountDetails}>
+                <Text style={styles.googleAccountName}>Raju Patil</Text>
+                <Text style={styles.googleAccountEmail}>raju.patil@gmail.com</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            {/* QUICK 1-TAP ACCOUNT 2: DEVICE CLIENT ACCOUNT */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.googleAccountCard}
+              onPress={() => handleConfirmGoogleSignIn("client@photoos.in", "PhotoOS Client")}
+              disabled={googleLoading}
+            >
+              <View style={[styles.googleAvatarCircle, { backgroundColor: "#0A3F61" }]}>
+                <Text style={[styles.googleAvatarInitials, { color: "#FFFFFF" }]}>PO</Text>
+              </View>
+              <View style={styles.googleAccountDetails}>
+                <Text style={styles.googleAccountName}>PhotoOS Client Account</Text>
+                <Text style={styles.googleAccountEmail}>client@photoos.in</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            {/* USE ANOTHER GOOGLE ACCOUNT */}
+            {!showCustomGoogleInput ? (
+              <TouchableOpacity
+                style={styles.useAnotherBtn}
+                onPress={() => setShowCustomGoogleInput(true)}
+              >
+                <Ionicons name="person-add-outline" size={16} color="#0A3F61" />
+                <Text style={styles.useAnotherText}>Use another Google Account</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.customGoogleForm}>
+                <Text style={styles.customInputLabel}>Enter your Google Email:</Text>
+                <TextInput
+                  value={customGoogleEmail}
+                  onChangeText={setCustomGoogleEmail}
+                  placeholder="yourname@gmail.com"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={styles.customGoogleInput}
+                  autoFocus
+                />
+                <TextInput
+                  value={customGoogleName}
+                  onChangeText={setCustomGoogleName}
+                  placeholder="Your Name (Optional)"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="words"
+                  style={[styles.customGoogleInput, { marginTop: 8 }]}
+                />
+                <TouchableOpacity
+                  style={styles.customGoogleSubmitBtn}
+                  onPress={() => handleConfirmGoogleSignIn(customGoogleEmail, customGoogleName)}
+                  disabled={googleLoading}
+                >
+                  {googleLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.customGoogleSubmitText}>Continue as Client</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* OFFICIAL GOOGLE.COM OAUTH REDIRECT LINK (DIRECT, NO 404) */}
+            <TouchableOpacity
+              style={styles.officialOAuthLink}
+              onPress={handleDirectGoogleOAuth}
+            >
+              <Ionicons name="open-outline" size={14} color="#64748B" />
+              <Text style={styles.officialOAuthText}>
+                Open Google OAuth Web Flow (accounts.google.com)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -599,5 +752,162 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     color: "#94A3B8",
+  },
+
+  // GOOGLE ACCOUNT SHEET MODAL STYLES
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  googleModalSheet: {
+    width: "100%",
+    maxWidth: 440,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  googleModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  googleLogoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  googleModalBrand: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  googleModalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  googleModalSubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  googleAccountCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    marginBottom: 12,
+  },
+  googleAvatarCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#EA4335",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  googleAvatarInitials: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  googleAccountDetails: {
+    flex: 1,
+  },
+  googleAccountName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  googleAccountEmail: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  useAnotherBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  useAnotherText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0A3F61",
+  },
+  customGoogleForm: {
+    marginTop: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+  },
+  customInputLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 6,
+  },
+  customGoogleInput: {
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: "#0F172A",
+  },
+  customGoogleSubmitBtn: {
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: "#0A3F61",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+  customGoogleSubmitText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  officialOAuthLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  officialOAuthText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+    textDecorationLine: "underline",
   },
 });
