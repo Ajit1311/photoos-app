@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Platform } from "react-native";
 import type { User } from "@supabase/supabase-js";
 import * as Linking from "expo-linking";
 
@@ -67,6 +68,55 @@ function createClientUser(
     created_at: new Date().toISOString(),
     email: cleanEmail,
   } as unknown as User;
+}
+
+async function syncClientUserToAdmin(data: {
+  userId?: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+  authProvider?: string;
+  phone?: string;
+  studioId?: string | null;
+  eventId?: string | null;
+}) {
+  try {
+    const endpoints = [
+      "https://app.photoos.in/api/client-auth/record-login",
+      "https://photoos-i8n69yut1-photo-os-team.vercel.app/api/client-auth/record-login",
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: data.userId,
+            email: data.email,
+            name: data.name,
+            avatarUrl: data.avatarUrl,
+            authProvider: data.authProvider || "google",
+            phone: data.phone,
+            platform: Platform.OS,
+            studioId: data.studioId || null,
+            eventId: data.eventId || null,
+          }),
+        });
+
+        if (res.ok) {
+          console.log("[ClientAuth] Login successfully recorded in Admin Panel:", data.email);
+          break;
+        }
+      } catch (endpointErr) {
+        // try next endpoint fallback
+      }
+    }
+  } catch (err) {
+    console.warn("[ClientAuth] Admin sync background notice:", err);
+  }
 }
 
 type AuthContextValue = {
@@ -209,6 +259,13 @@ export function AuthProvider({
               if (gProfile?.email) {
                 const gUser = createClientUser(gProfile.email, gProfile.name, gProfile.picture, "google");
                 await setStorageItem(STORAGE_KEY_CLIENT_SESSION, JSON.stringify(gUser));
+                void syncClientUserToAdmin({
+                  userId: gUser.id,
+                  email: gUser.email || gProfile.email,
+                  name: gProfile.name,
+                  avatarUrl: gProfile.picture,
+                  authProvider: "google",
+                });
                 if (mounted) {
                   setUser(gUser);
                   setEmailOtpVerified(true);
@@ -234,6 +291,13 @@ export function AuthProvider({
               setUser(parsed);
               setEmailOtpVerified(true);
               setLoading(false);
+              void syncClientUserToAdmin({
+                userId: parsed.id,
+                email: parsed.email || parsed.user_metadata?.email,
+                name: parsed.user_metadata?.full_name || parsed.user_metadata?.name,
+                avatarUrl: parsed.user_metadata?.avatar_url,
+                authProvider: parsed.app_metadata?.provider || "saved_session",
+              });
               return;
             }
           } catch {}
@@ -363,6 +427,15 @@ export function AuthProvider({
         try {
           await setStorageItem(STORAGE_KEY_CLIENT_SESSION, JSON.stringify(gUser));
         } catch {}
+        void syncClientUserToAdmin({
+          userId: gUser.id,
+          email: cleanEmail,
+          name: cleanName,
+          avatarUrl,
+          authProvider: "google",
+          studioId: pendingStudioToken,
+          eventId: pendingGalleryToken,
+        });
         setUser(gUser);
         setEmailOtpVerified(true);
         setPendingOtpEmail(null);
@@ -378,6 +451,15 @@ export function AuthProvider({
         try {
           await setStorageItem(STORAGE_KEY_CLIENT_SESSION, JSON.stringify(verifiedUser));
         } catch {}
+        void syncClientUserToAdmin({
+          userId: verifiedUser.id,
+          email: verifiedUser.email || email,
+          name: verifiedUser.user_metadata?.full_name || verifiedUser.user_metadata?.name,
+          avatarUrl: verifiedUser.user_metadata?.avatar_url,
+          authProvider: "otp",
+          studioId: pendingStudioToken,
+          eventId: pendingGalleryToken,
+        });
         setUser(verifiedUser);
         setEmailOtpVerified(true);
         setPendingOtpEmail(null);

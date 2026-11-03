@@ -265,11 +265,16 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.brandTextWrap}>
-              <Text style={[styles.logoText, { color: theme.text }]}>
-                PhotoOS
-              </Text>
-              <Text style={[styles.logoSubtitle, { color: theme.textSecondary }]}>
-                STUDIO PRO
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={[styles.logoText, { color: theme.text }]}>
+                  PhotoOS
+                </Text>
+                <View style={styles.vipBadgePill}>
+                  <Text style={styles.vipBadgeText}>CLIENT</Text>
+                </View>
+              </View>
+              <Text style={styles.logoSubtitle}>
+                AI STUDIO NETWORK
               </Text>
             </View>
           </TouchableOpacity>
@@ -336,9 +341,12 @@ export default function HomeScreen() {
         {/* APPLE LARGE TITLE WELCOME */}
         {/* ------------------------------------------------------------ */}
         <View style={styles.welcomeSection}>
-          <Text style={[styles.welcomeGreeting, { color: theme.textSecondary }]}>
-            {t("welcomeBack")}
-          </Text>
+          <View style={styles.welcomeSubRow}>
+            <Ionicons name="sparkles" size={13} color="#EF8619" />
+            <Text style={[styles.welcomeGreeting, { color: theme.textSecondary }]}>
+              {t("welcomeBack")}
+            </Text>
+          </View>
           <Text style={[styles.welcomeTitle, { color: theme.text }]}>
             {userName}
           </Text>
@@ -655,48 +663,47 @@ export default function HomeScreen() {
           </View>
         ) : (
           <TouchableOpacity
-            activeOpacity={0.88}
-            style={[
-              styles.eventHeroCard,
-              {
-                backgroundColor: theme.surface,
-                borderColor: theme.border,
-              },
-            ]}
+            activeOpacity={0.92}
+            style={styles.aiDiscoveryHeroCard}
             onPress={() => navigation.navigate("Main", { screen: "Camera" })}
           >
-            <View style={styles.eventHeroBadgeRow}>
-              <View style={[styles.eventLiveBadge, { backgroundColor: `${colors.teal}18` }]}>
-                <Ionicons name="sparkles" size={12} color={colors.teal} />
-                <Text style={[styles.eventLiveText, { color: colors.teal }]}>AI FACE MATCH</Text>
+            <View style={styles.aiHeroBadgeRow}>
+              <View style={styles.aiHeroBadge}>
+                <Ionicons name="sparkles" size={13} color="#EF8619" />
+                <Text style={styles.aiHeroBadgeText}>AI-POWERED MATCHING • 99.4% ACCURACY</Text>
               </View>
-              <Text style={[styles.eventStudioText, { color: theme.textSecondary }]}>
-                Instant Discovery
-              </Text>
+
+              <View style={styles.aiInstantBadge}>
+                <Text style={styles.aiInstantText}>INSTANT</Text>
+              </View>
             </View>
 
-            <Text style={[styles.eventHeroTitle, { color: theme.text }]}>
-              Find Your Photos by Face
-            </Text>
-
-            <Text style={[styles.eventHeroSub, { color: theme.textSecondary }]}>
+            <Text style={styles.aiHeroTitle}>
               {language === "मराठी"
-                ? "सेल्फी घ्या किंवा फोटो अपलोड करा आणि इव्हेंटमधील तुमचे सर्व फोटो त्वरित मिळवा"
+                ? "चेहऱ्यावरून तुमचे फोटो त्वरित शोधा"
                 : language === "हिन्दी"
-                  ? "सेल्फी लें या फोटो अपलोड करें और इवेंट की अपनी सभी तस्वीरें तुरंत पाएं"
-                  : "Take a selfie or upload a photo to discover all your shots with 99.4% AI accuracy"}
+                  ? "चेहरे से अपने फोटो तुरंत खोजें"
+                  : "Find Your Photos by Face"}
             </Text>
 
-            <View style={[styles.eventHeroButton, { backgroundColor: colors.primary }]}>
-              <Ionicons name="camera" size={18} color="#FFFFFF" />
-              <Text style={styles.eventHeroButtonText}>
+            <Text style={styles.aiHeroSubtitle}>
+              {language === "मराठी"
+                ? "इव्हेंटमधील हजारो फोटोंमधून तुमचा सेल्फी स्कॅन करून तुमचे सर्व फोटो सेकंदात मिळवा."
+                : language === "हिन्दी"
+                  ? "हजारों तस्वीरों में से अपना सेल्फी स्कैन करके अपने सभी फोटो तुरंत प्राप्त करें।"
+                  : "Scan your selfie to discover and download all your private event photos instantly."}
+            </Text>
+
+            <View style={styles.aiHeroScanButton}>
+              <Ionicons name="camera" size={18} color="#0A3F61" />
+              <Text style={styles.aiHeroScanButtonText}>
                 {language === "मराठी"
-                  ? "सेल्फी स्कॅन सुरू करा"
+                  ? "✨ सेल्फी स्कॅन सुरू करा (Scan Face)"
                   : language === "हिन्दी"
-                    ? "सेल्फी स्कैन शुरू करें"
-                    : "Start Face Search"}
+                    ? "✨ सेल्फी स्कैन शुरू करें (Scan Face)"
+                    : "✨ Start Face Scan Now"}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+              <Ionicons name="arrow-forward" size={16} color="#0A3F61" />
             </View>
           </TouchableOpacity>
         )}
@@ -1025,17 +1032,23 @@ function QuickAction({
         styles.quickCard,
         {
           backgroundColor: theme.surface,
-          borderColor: theme.border,
+          borderColor: `${accentColor}35`,
         },
       ]}
     >
-      <View
-        style={[
-          styles.quickIcon,
-          { backgroundColor: `${accentColor}15` },
-        ]}
-      >
-        <Ionicons name={icon} size={20} color={accentColor} />
+      <View style={styles.quickCardHeader}>
+        <View
+          style={[
+            styles.quickIcon,
+            { backgroundColor: accentColor },
+          ]}
+        >
+          <Ionicons name={icon} size={19} color="#FFFFFF" />
+        </View>
+
+        <View style={[styles.quickCardArrowPill, { backgroundColor: `${accentColor}18` }]}>
+          <Ionicons name="arrow-forward" size={12} color={accentColor} />
+        </View>
       </View>
 
       <Text style={[styles.quickTitle, { color: theme.text }]}>
@@ -1077,12 +1090,19 @@ const styles = StyleSheet.create({
   },
 
   logoMark: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0F589B",
+    backgroundColor: "#0A3F61",
+    borderWidth: 1,
+    borderColor: "rgba(239, 134, 25, 0.35)",
+    shadowColor: "#0A3F61",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
   },
 
   logoMarkImage: {
@@ -1095,16 +1115,33 @@ const styles = StyleSheet.create({
   },
 
   logoText: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.4,
+    fontSize: 19,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+
+  vipBadgePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    backgroundColor: "rgba(239, 134, 25, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 134, 25, 0.3)",
+  },
+
+  vipBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#EF8619",
+    letterSpacing: 0.6,
   },
 
   logoSubtitle: {
-    fontSize: 9,
-    fontWeight: "600",
-    letterSpacing: 0.6,
-    marginTop: -1,
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    color: "#EF8619",
+    marginTop: 1,
   },
 
   headerActions: {
@@ -1114,12 +1151,17 @@ const styles = StyleSheet.create({
   },
 
   headerIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
 
   notificationDot: {
@@ -1129,7 +1171,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#FF3B30",
+    backgroundColor: "#EF4444",
     borderWidth: 1.5,
     borderColor: "#FFFFFF",
   },
@@ -1140,18 +1182,24 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
 
-  welcomeGreeting: {
-    fontSize: 13,
-    fontWeight: "500",
-    letterSpacing: -0.1,
+  welcomeSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     marginBottom: 2,
   },
 
+  welcomeGreeting: {
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: -0.1,
+  },
+
   welcomeTitle: {
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: "700",
-    letterSpacing: -0.6,
+    fontSize: 27,
+    lineHeight: 33,
+    fontWeight: "800",
+    letterSpacing: -0.7,
   },
 
   /* SEARCH */
@@ -1223,16 +1271,32 @@ const styles = StyleSheet.create({
 
   quickCard: {
     width: "48.5%",
-    minHeight: 110,
-    borderRadius: 18,
-    borderWidth: 1,
+    minHeight: 114,
+    borderRadius: 20,
+    borderWidth: 1.5,
     padding: 14,
+    marginBottom: 12,
+    shadowColor: "#0A3F61",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+    justifyContent: "space-between",
+  },
+
+  quickCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 10,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+  },
+
+  quickCardArrowPill: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   quickIcon: {
@@ -1241,7 +1305,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
   },
 
   quickTitle: {
@@ -1538,6 +1601,91 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 16,
     marginTop: 2,
+  },
+
+  /* AI DISCOVERY HERO CARD (PREMIUM ULTRA-LUXURY) */
+  aiDiscoveryHeroCard: {
+    borderRadius: 24,
+    backgroundColor: "#0A3F61",
+    padding: 22,
+    marginBottom: 22,
+    borderWidth: 1.5,
+    borderColor: "rgba(239, 134, 25, 0.35)",
+    shadowColor: "#0A3F61",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  aiHeroBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  aiHeroBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(239, 134, 25, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 134, 25, 0.35)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+  },
+  aiHeroBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#FF9D3B",
+    letterSpacing: 0.6,
+  },
+  aiInstantBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+  },
+  aiInstantText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.8,
+  },
+  aiHeroTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.4,
+    marginBottom: 6,
+    lineHeight: 28,
+  },
+  aiHeroSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "rgba(255, 255, 255, 0.82)",
+    marginBottom: 16,
+  },
+  aiHeroScanButton: {
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 18,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  aiHeroScanButtonText: {
+    color: "#0A3F61",
+    fontSize: 14.5,
+    fontWeight: "800",
+    letterSpacing: -0.2,
   },
 
   /* ACTIVE EVENT HERO CARD */
